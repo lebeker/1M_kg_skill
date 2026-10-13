@@ -1,0 +1,16 @@
+# build output — regenerate with the `render` / `shot` commands
+# (a workspace's storage/ belongs to the user, not to this repo: never add it here)
+kg/
+web/
+
+# python
+__pycache__/
+*.pyc
+
+# the viewer is build output of the web-app repo: built there, copied or fetched in here.
+# Nothing under assets/ is committed except its README.
+assets/*.html
+assets/*.version
+
+# os
+.DS_Store

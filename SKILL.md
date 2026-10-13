@@ -1,0 +1,452 @@
+---
+name: kg
+description: >
+  Turn a research field into a knowledge-graph you can look at, and keep it current.
+  Use when the user asks to "map a research field", "show me what's happening in
+  <field>", "build a knowledge graph", "graph these papers",
+  "who works on <topic>", "track this research direction", "see what changed since
+  last time", "turn this bibliography into a map", "visualise my literature review",
+  or wants to explore, enrich, import, validate or render an existing kg/1 graph JSON.
+  Also use for "what graphs do I have", "show me the <name> graph", "let's work on
+  <graph>", "start/serve the graph server" and "open the knowledge graph". Produces a
+  self-contained interactive HTML page — pan, zoom, search, collapse — plus a
+  validated, shareable JSON artifact.
+version: 0.5.0
+author: Denis Tatarenko
+license: MIT
+platforms: [macos, linux]
+---
+
+# kg
+
+Turn a research field into a graph you can **look at** — then keep it current.
+
+This skill produces a self-contained HTML page from a small JSON document: what the
+field is made of, who works on it, what is applied versus speculative, and what changed
+since last time. A text dump of the same facts tells you far less, so the loop below
+always ends with someone *looking at the picture*.
+
+**This skill is self-contained.** It has no dependencies on any other project, and its
+paths are relative to this folder. `ENGINE` is used throughout as shorthand:
+
+```bash
+export ENGINE="$PWD/scripts/kg.py"     # run from this folder
+```
+
+✅ `test -f "$ENGINE"` exits 0 and `python3 "$ENGINE" --help` prints the command list.
+
+## Start here
+
+If you have just been pointed at this folder and are not sure what to do, run these
+three commands and read the output. They tell you everything:
+
+```bash
+python3 "$ENGINE" --help        # the whole command surface
+python3 "$ENGINE" graphs        # what graphs exist, and which one is current
+python3 "$ENGINE" render        # build the current graph's page and print a link
+```
+
+✅ You can state the command surface, what graphs the workspace holds, and the link you
+printed.
+
+**On a clean slate** — `graphs` prints nothing, or the folder you were pointed at has no
+`storage/` — there is nothing to find, and looking for a sample graph is wasted work.
+The workspace is created by the first graph in it:
+
+```bash
+python3 "$ENGINE" new --id field --title "My Field"
+```
+
+The shape it writes is the whole format, and it is small:
+
+```json
+{
+  "meta": {
+    "title": "Telomere attrition — mini example",
+    "schema": "kg/1",
+    "app": "viewer",
+    "app_url": "https://…/viewer-v0.0.2/viewer.html",
+    "requires": { "skills": ["kg"], "plugins": [], "tools": ["openalex"] }
+  },
+  "nodes": [
+    { "id": "telo",    "label": "Telomere attrition", "kind": "concept",     "level": 1, "size": 4 },
+    { "id": "greider", "label": "Carol Greider",      "kind": "scientist",   "level": 3, "size": 3 },
+    { "id": "jhu",     "label": "Johns Hopkins",      "kind": "institution", "level": 4, "size": 2 },
+    { "id": "unity",   "label": "Unity Biotechnology","kind": "company",     "level": 4, "size": 2 },
+    { "id": "calico",  "label": "Calico Life Sciences","kind": "company",    "level": 4, "size": 2 }
+  ],
+  "edges": [
+    { "from": "greider", "to": "telo",   "label": "Telomerase activity and cellular aging", "dir": "in", "time": 2018 },
+    { "from": "greider", "to": "jhu",    "label": "works at" },
+    { "from": "unity",   "to": "calico", "label": "collaborates on telomere biology" }
+  ]
+}
+```
+
+Five nodes are enough to check the whole loop — create, add, validate, render, look. Do
+that once on any new setup before trusting the skill on a real field.
+
+`references/format.md` is the format in full (every field, and what the engine
+guarantees). `examples/` is deliberately empty: a sample graph in this folder would go
+stale and start lying about the format the engine actually writes.
+
+## The workspace
+
+Graphs live in **one folder each**, and the whole thing is a workspace you can look at:
+
+```
+<root>/storage/<id>/          ← one graph, self-contained
+    graph.json                ← the kg/1 document the engine reads and writes
+    <raw export>              ← where it came from, if it was imported
+    index.html                ← the rendered page, written next to its graph
+<root>/storage/.current       ← which graph you are working on
+```
+
+`<root>` is `$KG_WORKSPACE` if you set it, otherwise the directory you run from. Never
+hardcode a host path into the skill or into a command you hand the user — the workspace
+is wherever they are.
+
+**`--graph` takes an id from the workspace or a path to any `.json`**, and every command
+that reads or writes a graph takes it. With no `--graph` at all you get the current
+graph. That is what makes the three asks answerable:
+
+| the user says | you run |
+|---|---|
+| "what graphs do I have?" | `python3 "$ENGINE" graphs` |
+| "show me the longevity one" | `python3 "$ENGINE" render --graph longevity` → give them the `file://` link it prints |
+| "let's work on longevity" | `python3 "$ENGINE" use longevity` — every later command needs no `--graph` |
+| "what's in it?" | `python3 "$ENGINE" info` |
+| "keep it open while I edit" | `python3 "$ENGINE" serve --graph longevity` → give them the `http://localhost:PORT/index.html` it prints |
+| "which viewers are there?" | `python3 "$ENGINE" apps` |
+| "can I see this one?" | `python3 "$ENGINE" check` — reports the app, what the graph needs, and what is missing |
+| "it needs openalex" | `python3 "$ENGINE" require --tool openalex` — records it on the graph |
+
+`graphs` marks the current one with `*`. `use` and `current` set and show it; `use`
+refuses an id that is not there rather than pretending.
+
+## When to Use
+
+- "map this research field", "show me what is happening in X"
+- tracking a narrow direction over time and seeing what changed since the last run
+- finding what is near-applied, and which company or group is behind it
+- importing an existing graph from another tool's export
+- Don't use for: literature search by itself (use Scholar/Litmaps/ResearchRabbit), or
+  for facts with no relational structure at all.
+
+## Procedure
+
+1. **Create or open the graph.**
+   ```bash
+   python3 "$ENGINE" new --id field --title "My Field"   # -> storage/field/graph.json
+   python3 "$ENGINE" use field                            # later commands need no --graph
+   ```
+   ✅ `new` prints `created …` and `current graph is now field`. `new --out <path>` still
+   works for a graph that is not part of a workspace.
+
+2. **Add the nodes that carry the structure** — the concepts/questions, and the labs,
+   companies or people attached to them. Give each a `level` (vertical position) and a
+   `size` (importance).
+   ```bash
+   python3 "$ENGINE" add-node --id telo --label "Telomere attrition" \
+       --kind concept --level 2 --size 4 --style solid
+   python3 "$ENGINE" add-node --id lab1 --label "Blackburn Lab" \
+       --kind lab --level 3 --size 3 --style solid --link "https://example.org/lab"
+   ```
+   ✅ `stats` shows the node counts rising and no `no palette` warning.
+
+3. **Add the relations.** Label every edge — an unlabelled edge is a line with no
+   meaning. `--dir in` means the relation points at the target.
+   ```bash
+   python3 "$ENGINE" add-edge --from lab1 --to telo --label studies --dir in
+   ```
+   ✅ `stats` shows `edges` and no `isolated` list for the nodes you intended to connect.
+
+   **A piece of work is an edge, not a node.** A paper, a trial, a patent: `from` the
+   researcher, `to` the subject, `label` the title, `--time` the year. The researcher is
+   then *connected to* what they work on, which is the thing the reader is looking for.
+   Two organisations working on the same subject get an edge **between them**, labelled
+   with the subject — that is what makes a cluster of companies legible instead of a fan
+   of lines into one dot.
+
+4. **Check the graph before rendering.**
+   ```bash
+   python3 "$ENGINE" stats
+   ```
+   ✅ kinds, styles, levels and any warnings appear. If `stats` reports `no palette`,
+   fix it now — `set-palette --kind X --color "#rrggbb"` — or the legend will be
+   meaningless.
+
+5. **Render to HTML, then screenshot it.**
+   ```bash
+   python3 "$ENGINE" render                  # -> next to the graph, prints the link
+   python3 "$ENGINE" shot --html storage/field/index.html --out storage/field/map.png
+   ```
+   ✅ the HTML is far larger than the JSON and the PNG is non-zero. If `shot` warns that the
+   PNG is small enough to be a flat page, believe it — that is WebGL not starting in
+   headless Chrome, not an empty graph. Do not "fix" the graph for it.
+
+6. **LOOK AT THE PNG.** Use `vision_analyze` on it (or read it directly if you see
+   images). **Never report on a graph you have not looked at.**
+   ✅ You can name the node kinds, the shapes, the levels, and one labelled relation —
+   things the JSON alone does not tell you.
+
+   The viewer fits the whole graph on open, so at that zoom you see **structure only**:
+   clusters and dots, no text. That is expected for a few hundred nodes — a 1000-node
+   canvas cannot carry 1000 readable labels. Text appears as the reader zooms in, which
+   is what the search box is for.
+
+7. **If the picture is wrong** — hairball, overlapping labels, everything on one row —
+   fix the **artifact** (levels, sizes, colours, authored positions), not the HTML by
+   hand, and repeat from step 5.
+
+8. **Validate before you hand over — this is what makes it a shareable artifact.**
+   ```bash
+   python3 "$ENGINE" validate
+   ```
+   ✅ prints `conformant — N nodes / M edges, schema kg/1` and exits 0. Fix every
+   `error:`; `warning:` lines are judgement calls, `note:` lines are facts about the
+   graph you should know before editing it.
+
+9. **Hand it over.** See the next section — this is not optional, and a bare filename
+   is not a handover.
+
+## Viewers are pluggable — the skill does not carry its own
+
+`render` and `serve` do not draw anything. They take **a template** and put the graph
+into it. A template is a single-file HTML carrying one element:
+
+```html
+<script id="kg-graph" type="application/json">__KG_GRAPH__</script>
+```
+
+Everything else in the file — React, WebGL, physics, styling — is the template's
+business, and the engine never looks at it. `assets/viewer.html` is the viewer that
+ships: 2D (sigma + graphology) and 3D (3d-force-graph), both inlined so the page works
+off `file://` with no network.
+
+- `python3 "$ENGINE" apps` lists the templates present, whether each one can actually be
+  rendered into, and where it came from (the `<name>.version` sidecar records the repo
+  and commit it was built from).
+- `python3 "$ENGINE" render --app <name>` picks one for this run. Otherwise the **graph's
+  own `meta.app`** decides (`new` seeds it with the shipped viewer), and failing that,
+  `viewer.html`. That is the interface: the document names the drawer, not a copy of it.
+- **If the graph names an app that is not here**, do not substitute another one silently
+  — the picture would be wrong and you would not know. Say which app is missing and get it:
+  ```bash
+  python3 "$ENGINE" apps                  # what is here, and where each copy came from
+  python3 "$ENGINE" fetch-viewer --url <url-of-the-single-file-viewer>
+  ```
+  `fetch-viewer` needs no node and no bun — `assets/README.md` carries the published URL of
+  the viewer that ships. Never fetch a viewer implicitly and never from a source you cannot
+  name: that page runs in the user's browser with their data inside it.
+- To add a viewer: drop another single-file HTML into `assets/` that contains the element
+  above, and it is immediately usable by name. **Do not build it here** — a viewer is
+  built in its own repo and copied in (see `assets/README.md`).
+
+One trap: replacing the text of that element must not be able to break the page, so a
+`</script>` inside the graph is escaped by `inject()`. If you hand-write a template,
+keep the element unique — `render` refuses a template with two of them.
+
+Another: **a blank page is a viewer older than the graph.** Positions are optional in the
+document, and sigma throws rather than draws when a node has none — during construction,
+so the page comes up empty instead of showing a graph. Viewers from 0.0.1 on lay the graph
+out themselves and say so in the header (`layout computed here`). If a page is blank,
+that is the thing to check first: re-fetch the viewer rather than hunting for the bug in
+the graph.
+
+## What a graph needs to be shown
+
+A graph is not only its nodes: it names **the app that draws it** and **what it needs** —
+skills, plugins, tools — so somebody else can pick the file up and know what to bring.
+
+```bash
+python3 "$ENGINE" check                 # the current graph
+python3 "$ENGINE" check --graph field   # any graph in the workspace
+```
+
+`check` prints the app the graph names and whether it is here, where to fetch it from if
+not, the skills/plugins/tools it declares, and — for skills — whether they are actually on
+this machine (it looks in `$KG_SKILLS_PATH`, `.codex/skills`, `.claude/skills` and
+`~/.hermes/skills`). It exits non-zero when something **needed to draw the graph** is
+missing.
+
+**When something is missing, say what and why, then ask.** Do not install on your own
+initiative. `fetch-viewer` and `check --install` put a page into the user's browser that
+will run there with their data inside it — the URL matters, and so does their yes.
+
+```bash
+python3 "$ENGINE" check --install    # fetch a missing app from the graph's own app_url
+python3 "$ENGINE" check --probe-url  # is that app_url reachable? (network)
+```
+
+Recording what a graph needs is how it stays honest about itself:
+
+```bash
+python3 "$ENGINE" require --tool openalex --skill kg    # built with these
+python3 "$ENGINE" require --remove --tool openalex      # and no longer
+```
+
+Tools are **declared, not verified** — `check` cannot know whether this agent has an
+OpenAlex tool or a key, and it says so rather than guessing. Skills it can check, because
+a skill is a folder with a `SKILL.md` in a place agents look.
+
+## Importing another tool's export
+
+The engine reads and writes `kg/1` and **nothing else**. Other tools' formats are
+handled by **adapters** in `scripts/adapters/`, one file per foreign format:
+
+```bash
+python3 "$ENGINE" import --format foresight --graph raw.graph --id field
+```
+
+- `python3 "$ENGINE" graphs` shows the result; it becomes the current graph.
+- The refusal is the feature: loading a foreign export used to produce a confident
+  **"0 nodes"**. Now the engine names the problem and lists the adapters that exist.
+- To support a new format, add `scripts/adapters/<name>.py` exporting
+  `convert(src, title, schema, colors) -> dict` — see `scripts/adapters/README.md`.
+  Never teach the engine a vendor's shape.
+
+## Editing a graph that someone else made
+
+The point of the `kg/1` schema is that **a different agent, in a different session,
+on a different machine can pick the file up cold.** When you are that second agent:
+
+1. `validate` first. Errors mean the original writer left it broken; say so rather than
+   silently working around it.
+2. Read the `note:` lines to learn the shape before touching it — how many nodes are
+   isolated, how many edges carry labels. Do not assume.
+3. Make your change, then `validate` again and re-render.
+
+```bash
+# fold another graph's content into this one (--other takes an id or a path)
+python3 "$ENGINE" merge --other other --on-conflict rename
+# ... skip (default) keeps the existing node, overwrite replaces it, rename suffixes
+#     the incoming id with _m and records where it came from
+
+# correct a mistake (these did not exist before; agents used to hand-edit the JSON)
+python3 "$ENGINE" remove-node --id typo1
+python3 "$ENGINE" remove-edge --from lab1 --to telo
+# keep the node, drop only its wiring:
+python3 "$ENGINE" remove-node --id lab1 --drop-orphan-edges-only
+```
+
+`remove-node` also deletes every edge touching the node, so you cannot leave a dangling
+line behind. It refuses ids that do not exist rather than reporting a cheerful `0`.
+
+## Handing the graph to a human
+
+**A filename is not a link.** Writing `index.html` in a reply gives the human nothing
+they can click, and a relative path they cannot paste into a browser. This is the most
+common way this skill fails its user.
+
+`render` prints the link itself — give it verbatim. It is a `file:///…` URL:
+
+```bash
+python3 "$ENGINE" render --graph field
+# rendered 1033 nodes / 795 edges -> …/storage/field/index.html
+#   file:///…/storage/field/index.html
+```
+
+If a person is in the session — the normal case — use `serve` instead, because it stays
+current while you work:
+
+```bash
+python3 "$ENGINE" serve --graph field --port 8300
+```
+
+Report the **full URL, verbatim**: `http://localhost:8300/index.html`.
+
+- **Full scheme and host.** Never a bare filename, never a path they must assemble.
+- **Say it is live.** "It re-renders from the graph on every refresh — I keep editing,
+  you just hit reload." `serve` re-reads the JSON and re-injects it through the template
+  on each request, so an edit made with `add-node` shows up on reload.
+- **Report the port `serve` actually printed.** It walks forward if the default is
+  taken. Do not assume 8300.
+- **If the server is not running, say so.** A URL that 404s is worse than no URL.
+
+### If `serve` cannot bind — read the error, do not hunt for ports
+
+A sandboxed agent may be **forbidden from binding any socket at all**. Then *every* port
+fails identically, and the error says so:
+
+```
+error: could not listen on any port in 8300..8319: [Errno 1] Operation not permitted
+  This is a PERMISSION failure, not a busy port. ...
+```
+
+- **Do not loop through other port ranges.** If 8300 fails and `lsof` shows nothing
+  listening, it is a sandbox restriction; 8400 and 12345 fail the same way. Trying more
+  ports wastes the user's time and reads as a broken tool.
+- **Fall back to the static page, handed over as a clickable URL.** `render` already
+  prints it; `open` prints it and opens it. Say plainly that it is **static** — it will
+  not update until you re-render. That limitation is honest and workable; a dead
+  `http://` link is not.
+
+✅ The human can click something that opens the current graph. If they cannot, the
+handover failed regardless of how good the graph is.
+
+### What the human can do in the viewer
+
+Tell them this, or they will click once, see an unreadable cloud, and conclude it is
+broken:
+
+- **Pan and zoom** — drag to pan, wheel to zoom. Labels fade in as you zoom, so start by
+  zooming into the branch you care about.
+- **Search** — the box top-left, or press `/`. Typing filters across labels, kinds and
+  tags; clicking a hit centres it. `Esc` clears.
+- **2D / 3D** — the buttons top-right switch renderer. The 3D one is loaded on demand
+  (about 1.4 MB), so the first click takes a moment. `fit` reframes the graph.
+- **Selection** — clicking a node shows its label, kind, level, size, source link and
+  description.
+
+✅ You have described at least search and the 2D/3D switch. A viewer nobody knows how to
+drive is the same as no viewer.
+
+## Updating a field you already mapped
+
+1. `cp storage/field/graph.json storage/field/graph.backup.json` — always, so you can
+   diff.
+2. Add the new work (new papers, new labs, new companies).
+3. `stats` the two files and compare counts by kind. The backup is *not* named
+   `graph.json`, so it does not shadow the graph: `graph.json` always wins in a folder.
+4. Re-render, screenshot, **look**. Then state what changed in words.
+5. If `serve` is running, tell the human to refresh — the change is already visible.
+
+The diff is the product. "Two new labs entered this space since March, both working on
+the same mechanism from different directions" is the output; a list of node ids is not.
+
+## Where output goes
+
+**The page belongs next to its graph**, which is where `render` puts it by default:
+`storage/<id>/index.html`. Nothing to remember, nothing to pass.
+
+Renders are build output. They are large, they are regenerated by one command, and they
+do not belong in version control — a workspace's `storage/` is the user's data, not a
+repo. If you are working outside a workspace and writing into a git repo, keep renders
+inside a gitignored folder (`kg/`, `web/`); never `--out` a file to the repo root.
+
+## Pitfalls
+
+1. **A bare filename is not a link.** See "Handing the graph to a human". This is the
+   defect users hit most, and it makes good work unusable.
+2. **Positions belong to the viewer; authored ones win.** A graph whose nodes carry no
+   `x,y` is laid out in the browser on open — the header says `layout computed here`. If
+   *every* node carries a position, that layout is used exactly as given, because
+   positions are an editorial decision, not noise. An imported graph authored for a
+   different canvas can start enormous in 3D for the same reason: hand-authored
+   coordinates and a free 3D simulation do not mix.
+3. **Unknown kinds render in a hashed colour** and `stats` warns. Not an error, but a
+   legend that lies.
+4. **An unlabelled edge tells the reader nothing.** The engine allows it; the picture
+   suffers.
+5. **`render` needs a template.** If `assets/viewer.html` is missing, say so — the skill
+   ships templates, it does not build them. Do not hand-write HTML to work around it.
+6. **A screenshot is not optional.** The whole point of the skill is that an agent can
+   see the result before a human has to.
+
+## References
+
+- `references/format.md` — the `kg/1` document format in full.
+- `scripts/adapters/README.md` — how to add an importer for another tool's export.
+- `README.md` — what this is for, how a graph is shared, and how the viewer is built.
+- `assets/viewer.html` — the bundled viewer (built elsewhere, copied in; see README).
