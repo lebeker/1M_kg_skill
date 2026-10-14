@@ -11,6 +11,7 @@ __pycache__/
 # Nothing under assets/ is committed except its README.
 assets/*.html
 assets/*.version
+assets/*.app.json
 
 # os
 .DS_Store

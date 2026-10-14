@@ -1,0 +1,40 @@
+{
+  "note": [
+    "The apps this skill knows about, and what each one needs. This is the skill's own copy",
+    "so that a first question ('map this field for me') can be answered before anything is",
+    "installed; the app's own app.json, fetched beside its viewer, is the authoritative",
+    "word and overrides these entries. A discovery process that asks a server for available",
+    "apps replaces this file — not the commands that read it."
+  ],
+  "apps": [
+    {
+      "id": "viewer",
+      "title": "Research field map",
+      "purpose": "Map a research field so it can be looked at: what the field is made of, who works on it, and where the applied work is.",
+      "keywords": [
+        "research", "field", "map", "paper", "papers", "literature", "science",
+        "scientific", "researcher", "researchers", "scientist", "scientists",
+        "who works on", "lab", "labs", "university", "institution", "company",
+        "companies", "startup", "graph", "knowledge graph", "literature review",
+        "longevity", "biotech", "cryogenics", "brain", "drug", "clinical", "trial"
+      ],
+      "repo": "https://github.com/lebeker/1M_kg_sciense-kg_webapp",
+      "url": "https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/viewer-v0.0.2/viewer.html",
+      "manifest_url": "https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/main/app.json",
+      "requires": {
+        "skills": ["kg"],
+        "plugins": [],
+        "tools": ["openalex"]
+      },
+      "recommends": {
+        "tools": ["a web-search tool", "crossref", "arxiv"]
+      },
+      "tool_notes": {
+        "openalex": "works, authors, institutions and concepts in one place, free and without a key — it carries most of the skeleton",
+        "crossref": "publisher metadata, DOIs and funders, for what OpenAlex has not indexed",
+        "arxiv": "preprints, which appear here months before anywhere else",
+        "a web-search tool": "the only way to evidence a company — no free API lists what a private company is working on"
+      }
+    }
+  ]
+}

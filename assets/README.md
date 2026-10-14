@@ -85,23 +85,62 @@ bun install && bun run build:local && node scripts/bundle.mjs /path/to/this/skil
 
 In the testbed, `make bundle` does that for you.
 
+## The app's own declaration: `<name>.app.json`
+
+A viewer is half an app. The other half is what the app says about itself — what it is for,
+what it needs to be useful, and the node kinds and edges a graph for it is made of:
+
+```json
+{ "id": "viewer",
+  "title": "Research field map",
+  "purpose": "Map a research field so it can be looked at…",
+  "keywords": ["research", "field", "longevity", "…"],
+  "requires":   { "skills": ["kg"], "plugins": [], "tools": ["openalex"] },
+  "recommends": { "tools": ["a web-search tool"] },
+  "tool_notes": { "openalex": "what it gives you, and why the graph needs it" },
+  "kinds": [ { "kind": "concept", "color": "#7b9ecb", "meaning": "…" } ],
+  "edges": [ { "pattern": "scientist → concept", "label": "the title of the work",
+               "meaning": "a piece of work is an EDGE, not a node" } ] }
+```
+
+It is authored in the app's own repository (`app.json`, next to the viewer's source) and
+published at:
+
+```
+https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/main/app.json
+```
+
+Not tag-pinned, on purpose: the declaration says what the app is *for*, which does not
+change when the build does. The viewer is tag-pinned; the declaration stays current.
+
+With it, `suggest "<the user's words>"` can pick the app, name what is missing, and hand the
+agent the kinds and edge patterns to build with. It arrives together with the viewer:
+
+```bash
+python3 scripts/kg.py fetch-app viewer
+```
+
+Without it, the skill falls back to its own catalogue (`scripts/apps.json`) — the whole flow
+still works, from a copy rather than the app's own word. Schemas: `references/apps.md`.
+
 ### `viewer.version` — where a template came from
 
 Whoever puts a template here should say where it came from. Two shapes exist, both read by
 `apps`:
 
 ```json
-{ "name": "kg-viewer", "version": "0.0.1", "built_at": "…",
+{ "name": "kg-viewer", "version": "0.0.2", "built_at": "…",
   "origin": "https://github.com/lebeker/1M_kg_sciense-kg_webapp",
-  "commit": "413d364", "bytes": 1788015,
-  "fetch_url": "https://raw.githubusercontent.com/…/viewer-v0.0.2/viewer.html" }
+  "commit": "e4ca883", "bytes": 1799703,
+  "fetch_url": "https://raw.githubusercontent.com/…/viewer-v0.0.2/viewer.html",
+  "manifest_url": "https://raw.githubusercontent.com/…/main/app.json" }
 
 { "name": "viewer", "origin": "https://…/viewer.html",
-  "fetched_at": "…", "bytes": 1788015, "sha256": "…" }
+  "fetched_at": "…", "bytes": 1799703, "sha256": "…" }
 ```
 
 `fetch_url` is what `new` copies into a fresh graph's `meta.app_url`, which is how a graph
-comes to carry the address of its own drawer.
+comes to carry the address of its own drawer. `manifest_url` is the app's declaration.
 
 That is how an agent answers "is this viewer current, and where do I get a newer one?"
 without guessing — and why the skill can stay ignorant of which app happens to be

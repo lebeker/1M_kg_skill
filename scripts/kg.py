@@ -13,7 +13,8 @@ Subcommands:
   graphs          list the graphs in the workspace
   current         print the graph you are working on
   use             set the current graph
-  new             start an empty graph
+  suggest         which app fits a user's ask, what it needs, how a graph for it is shaped
+  new             start an empty graph (--app, or --ask to pick the app from the words)
   import          convert another tool's export into kg format (--format <name>)
   add-node        append a node
   add-edge        append an edge
@@ -29,6 +30,7 @@ Subcommands:
   stats           textual summary (what the graph contains)
   check           can this graph be shown here? what is missing, and install it
   apps            list the bundled viewers (templates)
+  fetch-app       install an app from the catalogue: viewer + its own declaration
   fetch-viewer    download a viewer into assets/ — no node, no bun, no build
   render          write a standalone HTML from a template + the graph
   shot            headless-Chrome screenshot of that HTML -> PNG
@@ -668,6 +670,189 @@ def fetch_viewer(url: str, name: str | None, force: bool) -> int:
     return 0
 
 
+# --------------------------------------------------------- the app catalogue
+
+def catalogue() -> list[dict]:
+    """The apps this skill knows about, from `scripts/apps.json`.
+
+    A finite list on purpose. The app's own manifest (`<name>.app.json`, installed next to
+    the viewer) is what the app says about itself; this is what the skill knows before
+    anything is installed, which is the state a user's first question arrives in. A
+    discovery process that asks a server for available apps replaces this file, not the
+    commands that read it.
+    """
+    p = Path(__file__).resolve().parent / "apps.json"
+    if not p.exists():
+        return []
+    try:
+        data = json.loads(p.read_text())
+    except Exception:
+        return []
+    apps = data.get("apps") if isinstance(data, dict) else data
+    return [a for a in (apps or []) if isinstance(a, dict) and a.get("id")]
+
+
+def catalogue_entry(name: str) -> dict:
+    for a in catalogue():
+        if a.get("id") == name:
+            return a
+    return {}
+
+
+def app_manifest(name: str) -> dict:
+    """The app's own declaration, installed beside it as `<name>.app.json`."""
+    p = assets_dir() / f"{name}.app.json"
+    if not p.exists():
+        return {}
+    try:
+        d = json.loads(p.read_text())
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def app_facts(name: str) -> dict:
+    """Catalogue entry + installed manifest. The manifest is the app's own word, so it wins."""
+    facts = dict(catalogue_entry(name))
+    for k, v in app_manifest(name).items():
+        if v not in (None, "", [], {}):
+            facts[k] = v
+    return facts
+
+
+def requirement_state(name: str, kind: str) -> tuple[bool | None, str]:
+    """(is it here, one line for a human). None means: this file cannot know."""
+    if kind == "skills":
+        found = find_skill(name)
+        if found:
+            return True, f"found — {found}"
+        tried = ", ".join(str(r) for r in skill_search_roots() if r.is_dir())
+        return False, f"not found — looked in {tried}"
+    if kind == "plugins":
+        return None, "declared — the viewer or the host provides it; not verifiable here"
+    return None, ("declared — used to search and enrich; a JSON file cannot see whether "
+                  "this machine has it")
+
+
+def score_app(ask: str, app: dict) -> tuple[int, list[str]]:
+    """How well does this app fit what the user asked for? Keywords are the signal; words
+    from the title and purpose are a weaker one, so a vague ask still lands somewhere
+    instead of on whatever happens to be first."""
+    text = ask.lower()
+    hits = [kw for kw in (app.get("keywords") or []) if kw.lower() in text]
+    words = set(re.findall(r"[a-z]{4,}", text))
+    blob = f"{app.get('title', '')} {app.get('purpose', '')}".lower()
+    soft = sorted(w for w in words if w in blob and w not in hits)
+    return len(hits) * 3 + len(soft), hits + soft
+
+
+def print_app_guide(facts: dict, pad: str = "") -> int:
+    """What an app is for, what it needs, and what it builds. Prints the missing pieces and
+    returns how many of them there are — a person has to hear about those before anything
+    gets installed."""
+    notes = facts.get("tool_notes") or {}
+    missing = 0
+    unverifiable: list[str] = []
+    for kind in ("skills", "plugins", "tools"):
+        for name in (facts.get("requires") or {}).get(kind) or []:
+            here, state = requirement_state(name, kind)
+            if here is False:
+                missing += 1
+            elif here is None:
+                unverifiable.append(name)
+            note = notes.get(name)
+            print(f"{pad}{kind[:-1]:<9} {name}" + (f" — {note}" if note else ""))
+            print(f"{pad}          {state}")
+    for name in ((facts.get("recommends") or {}).get("tools") or []):
+        note = notes.get(name)
+        print(f"{pad}{'suggests':<9} {name}" + (f" — {note}" if note else ""))
+    if facts.get("kinds"):
+        print(f"{pad}kinds     " + ", ".join(
+            str(k.get("kind")) for k in facts["kinds"] if k.get("kind")))
+    for e in facts.get("edges") or []:
+        line = f"{e.get('pattern', '')}" + (f" — {e.get('meaning')}" if e.get("meaning") else "")
+        print(f"{pad}edges     {line}")
+    if unverifiable:
+        print(f"{pad}note      {', '.join(unverifiable)} cannot be checked from a file: "
+              f"confirm this agent has them (an MCP tool, a plugin or a key) before building "
+              f"the graph from them, and tell the user what to add if it does not.")
+    return missing
+
+
+def suggest_app(ask: str) -> int:
+    """Which app fits this ask, what it needs, and how a graph for it is shaped."""
+    apps = catalogue()
+    if not apps:
+        print("error: no app catalogue here (scripts/apps.json) — nothing to suggest",
+              file=sys.stderr)
+        return 3
+    scored = sorted(((score_app(ask, a)[0], a) for a in apps), key=lambda t: -t[0])
+    score, best = scored[0]
+    name = best["id"]
+    facts = app_facts(name)
+    installed = (assets_dir() / f"{name}.html").exists()
+
+    print(f'ask       "{ask}"')
+    print(f"app       {name} — {best.get('title', '')}"
+          + ("" if score else "   (nothing matched; it is the only app this skill knows)"))
+    hits = score_app(ask, best)[1]
+    if hits:
+        print(f"matched   {', '.join(hits[:8])}")
+    if facts.get("purpose"):
+        print(f"purpose   {facts['purpose']}")
+    print(f"installed {'yes' if installed else 'no'}")
+    missing = print_app_guide(facts)
+    print()
+    if not installed:
+        print(f"to install it:  kg.py fetch-app {name}"
+              + ("" if best.get("url") else "   (no url in the catalogue)"))
+    if missing:
+        print(f"missing   {missing} required piece(s) — tell the user which, what each is for, "
+              f"and that the graph is built from them. Install nothing without a yes.")
+    print(f"then      kg.py new --id <id> --app {name} --title \"…\"")
+    return 0
+
+
+def fetch_app(name: str, url: str | None, manifest_url: str | None, force: bool) -> int:
+    """Install an app from the catalogue: the viewer, and the app's own declaration.
+
+    `--url` overrides the catalogue, which is how a mirror, a fork or a local build gets
+    installed by the same command.
+    """
+    entry = catalogue_entry(name)
+    src = url or entry.get("url")
+    if not entry and not url:
+        print(f"error: '{name}' is not in the catalogue (scripts/apps.json) — "
+              f"pass --url to install a viewer from somewhere else", file=sys.stderr)
+        return 2
+    if not src:
+        print(f"error: the catalogue has no url for '{name}'", file=sys.stderr)
+        return 3
+    rc = fetch_viewer(src, name, force)
+    if rc != 0:
+        return rc
+
+    man_src = manifest_url or entry.get("manifest_url")
+    if not man_src:
+        return 0
+    try:
+        rq = urllib.request.Request(man_src, headers={"User-Agent": "kg-skill-fetch-app/1"})
+        with urllib.request.urlopen(rq, timeout=60) as r:
+            body = r.read()
+        d = json.loads(body.decode("utf-8", errors="replace"))
+        if not isinstance(d, dict) or not d.get("id"):
+            raise ValueError("that is not an app manifest")
+        (assets_dir() / f"{name}.app.json").write_text(json.dumps(d, indent=1) + "\n")
+        print(f"  what   {d.get('title', '')} — {d.get('purpose', '')}")
+        print_app_guide(d, pad="  ")
+    except Exception as e:
+        print(f"  note   the viewer is installed, but its manifest did not come with it "
+              f"({man_src}): {e}\n"
+              f"         what it needs is still in this skill's catalogue: kg.py apps",
+              file=sys.stderr)
+    return 0
+
+
 def template_path(app: str | None) -> Path:
     """A template is a single-file HTML with the graph element in it."""
     if app:
@@ -789,10 +974,26 @@ def main() -> int:
     p.add_argument("--as", dest="as_", help="template name (default: from the URL)")
     p.add_argument("--force", action="store_true", help="replace an existing template")
 
+    p = sub.add_parser("suggest", help="which app fits this ask, what it needs, and how a "
+                                       "graph for it is shaped")
+    p.add_argument("ask", help="what the user asked for, in their own words")
+
+    p = sub.add_parser("fetch-app", help="install an app from the catalogue: the viewer and "
+                                         "the app's own declaration")
+    p.add_argument("id", help="app id, e.g. viewer")
+    p.add_argument("--url", help="install from here instead of the catalogue "
+                                 "(a mirror, a fork, a local build)")
+    p.add_argument("--manifest-url", dest="manifest_url",
+                   help="where the app's declaration lives")
+    p.add_argument("--force", action="store_true", help="replace an existing copy")
+
     p = sub.add_parser("new", help="start an empty graph")
     p.add_argument("--out", help="explicit path (default: storage/<id>/graph.json)")
     p.add_argument("--id", help="workspace id for the graph")
     p.add_argument("--title", default="graph")
+    p.add_argument("--app", help="seed the graph from this app: its requirements, kinds, "
+                                 "colours and the shape of its edges")
+    p.add_argument("--ask", help="a user's words — pick the app that fits, then seed from it")
 
     p = sub.add_parser("import", help="convert another tool's export into kg format")
     p.add_argument("--format", dest="fmt", required=True,
@@ -949,10 +1150,27 @@ def main() -> int:
                 if not what:
                     what = ("fetched " + (stamp.get("fetched_at") or "")[:10]).strip()
                 print(f"   {'':<16} {'':>5}      {what} {stamp.get('commit', '')}  {where}")
+            # What the app says it is for. This is a property of the app, printed by the
+            # command that lists apps, so `apps` answers "which of these do I want?".
+            facts = app_facts(r["name"])
+            if facts.get("purpose"):
+                print(f"   {'':<16} {'':>5}      {facts.get('title', '')} — {facts['purpose']}")
+            needs = [n for k in ("skills", "plugins", "tools")
+                     for n in ((facts.get("requires") or {}).get(k) or [])]
+            if needs:
+                print(f"   {'':<16} {'':>5}      needs: {', '.join(needs)}"
+                      + ("" if facts.get("kinds") else "")
+                      + ("   (kg.py check --graph <graph> says whether they are here)"))
         return 0
 
     if a.cmd == "fetch-viewer":
         return fetch_viewer(a.url, a.as_, a.force)
+
+    if a.cmd == "suggest":
+        return suggest_app(a.ask)
+
+    if a.cmd == "fetch-app":
+        return fetch_app(a.id, a.url, a.manifest_url, a.force)
 
     if a.cmd == "require":
         path = resolve_graph(a.graph)
@@ -996,23 +1214,49 @@ def main() -> int:
         else:
             gid = a.id or slug(a.title)
             out = graph_target(gid)
+
+        # Which app this graph is for. The user's own words decide when there is no --app:
+        # the intention comes first, the app follows from it, and the app says the rest.
+        chosen = a.app
+        if not chosen and a.ask:
+            apps = catalogue()
+            if apps:
+                chosen = sorted(apps, key=lambda x: -score_app(a.ask, x)[0])[0]["id"]
+                print(f'ask       "{a.ask}"')
+        facts = app_facts(chosen) if chosen else {}
+        app = chosen or default_app()
+
         meta = {"title": a.title, "schema": SCHEMA}
-        app = default_app()
         if app:
             meta["app"] = app
-            url = default_app_url()
+            url = facts.get("url") or default_app_url()
             if url:
                 meta["app_url"] = url
         # The slots exist on every graph from the start: a document that can say what it
-        # needs is a document that can be handed to someone else.
-        meta["requires"] = {"skills": [], "plugins": [], "tools": []}
+        # needs is a document that can be handed to someone else. An app fills them in.
+        meta["requires"] = {k: list((facts.get("requires") or {}).get(k) or [])
+                            for k in ("skills", "plugins", "tools")}
         meta["colors"] = dict(DEFAULT_COLORS)
+        # A graph built to an app's conventions should not trip `stats` on the colours that
+        # app asked for, so its kinds are seeded rather than left to a hash.
+        for k in facts.get("kinds") or []:
+            if k.get("kind") and k.get("color"):
+                meta["colors"][str(k["kind"])] = str(k["color"])
         save({"meta": meta, "nodes": [], "edges": []}, out)
         if gid:
             set_current(gid)
         print(f"created {out}")
         if gid:
             print(f"current graph is now {gid}")
+        if facts:
+            print(f"app       {app} — {facts.get('title', '')}")
+            if facts.get("purpose"):
+                print(f"          {facts['purpose']}")
+            missing = print_app_guide(facts)
+            if missing:
+                print(f"missing   {missing} required piece(s) — tell the user which, what each "
+                      f"is for, and why the graph is built from them. Install nothing "
+                      f"without a yes.")
         return 0
 
     if a.cmd == "import":

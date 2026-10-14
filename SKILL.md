@@ -8,10 +8,11 @@ description: >
   last time", "turn this bibliography into a map", "visualise my literature review",
   or wants to explore, enrich, import, validate or render an existing kg/1 graph JSON.
   Also use for "what graphs do I have", "show me the <name> graph", "let's work on
-  <graph>", "start/serve the graph server" and "open the knowledge graph". Produces a
+  <graph>", "start/serve the graph server" and "open the knowledge graph", or asks for a
+  graph of something and needs the right kind of map for it. Produces a
   self-contained interactive HTML page — pan, zoom, search, collapse — plus a
   validated, shareable JSON artifact.
-version: 0.5.0
+version: 0.6.0
 author: Denis Tatarenko
 license: MIT
 platforms: [macos, linux]
@@ -123,6 +124,57 @@ graph. That is what makes the three asks answerable:
 
 `graphs` marks the current one with `*`. `use` and `current` set and show it; `use`
 refuses an id that is not there rather than pretending.
+
+## From an ask to a graph
+
+Nobody says "produce a `kg/1` document". They say what they want, and you have to land on
+the right *shape* of graph before anything else. The app decides the shape: it declares what
+it is for, what it needs to be useful, and which node kinds and edges a graph for it is made
+of.
+
+```bash
+python3 "$ENGINE" suggest "map the cryogenics research field"
+```
+
+`suggest` picks the app that fits the words and prints what it is for, whether it is
+installed, every skill/plugin/tool it **requires** — each with what it is for — what it only
+*suggests*, the kinds to build with, and the edge patterns to follow.
+
+| the user says | you run |
+|---|---|
+| "map the longevity field", "graph these papers" | `suggest "<their words>"` |
+| "build me a graph for X" | `new --id x --title "X" --app viewer` |
+| "what can this thing draw?" | `apps` |
+
+1. **Say which app fits, and why — in one or two lines.** Not a catalogue dump: "this is a
+   field map; the app is `viewer`, and it is built from OpenAlex."
+2. **Say what is missing and what it is for.** Skills are checked on this machine; tools
+   cannot be — a JSON file cannot see an MCP server. Name the tools you will work from and
+   what the graph loses without them (for a field map: no works, no authors, no
+   institutions — you would be inventing the field's contents).
+3. **Install nothing without a yes.**
+   ```bash
+   python3 "$ENGINE" fetch-app viewer     # the viewer, and the app's own declaration
+   ```
+   That page will run in the user's browser with their data inside it. Say where it comes
+   from, then ask.
+4. **Create the graph from the app's conventions, not your own.**
+   ```bash
+   python3 "$ENGINE" new --id cryo --title "Cryogenics" --app viewer
+   ```
+   `new --app` writes `meta.app`, `meta.app_url` and the app's `requires` into the graph,
+   seeds the palette with the app's kinds so `stats` never warns, and prints the kinds and
+   edge patterns to build with. `new --ask "…"` does the same, picking the app from the
+   user's own words.
+5. **Then build it and show it** — the procedure below. The graph is the deliverable; the
+   app only decides its shape.
+
+**Where this knowledge lives.** `scripts/apps.json` is this skill's own short list of known
+apps, so the first question can be answered before anything is installed. Once an app is
+installed, **its own declaration** (`assets/<name>.app.json`, fetched beside the viewer)
+takes over — the app defines the goal and the skill does not argue with it. A discovery
+service for the paid tier replaces that list, not the commands that read it. Full schemas:
+`references/apps.md`.
 
 ## When to Use
 
@@ -447,6 +499,8 @@ inside a gitignored folder (`kg/`, `web/`); never `--out` a file to the repo roo
 ## References
 
 - `references/format.md` — the `kg/1` document format in full.
+- `references/apps.md` — what an app declares (purpose, requirements, kinds, edges), the
+  catalogue the skill matches against, and the rules around installing one.
 - `scripts/adapters/README.md` — how to add an importer for another tool's export.
 - `README.md` — what this is for, how a graph is shared, and how the viewer is built.
 - `assets/viewer.html` — the bundled viewer (built elsewhere, copied in; see README).

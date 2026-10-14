@@ -108,7 +108,9 @@ levels, sizes, colours — rather than the HTML by hand.
 |---|---|
 | `graphs` | list the workspace: id, title, size, which one is current |
 | `current` / `use` | show / set the graph you are working on |
-| `apps` | list the bundled viewers (templates), where each came from, whether it can render |
+| `suggest` | which app fits what the user asked for, what it needs, how a graph for it is shaped |
+| `apps` | list the bundled viewers (templates), their purpose, what each needs, where each came from |
+| `fetch-app` | install an app from the catalogue: the viewer and its own declaration (no node, no bun) |
 | `fetch-viewer` | download a viewer into `assets/` — no node, no bun, no build |
 | `new` | create an empty graph (`--id` in the workspace, or `--out <path>`) |
 | `import` | convert another tool's export (`--format <adapter>`) |
@@ -125,6 +127,34 @@ levels, sizes, colours — rather than the HTML by hand.
 | `shot` | HTML → PNG (for agents to look at) |
 | `serve` | local live-reloading server |
 | `open` | open the rendered page in a browser |
+
+## Choosing the app, from what the user asked for
+
+An app declares what it is for, what it needs to be useful, and the node kinds and edge
+patterns a graph for it is made of. That declaration is what turns "make me a graph" into a
+specific thing to build:
+
+```bash
+python3 "$ENGINE" suggest "map the cryogenics research field"
+```
+
+It prints the app that fits, whether it is installed, every required skill/plugin/tool with
+what each is for, what it only suggests, and the kinds and edges to build with. Then:
+
+```bash
+python3 "$ENGINE" fetch-app viewer        # install it: viewer + its own declaration
+python3 "$ENGINE" new --ask "map the cryogenics research field" --id cryo
+python3 "$ENGINE" new --id cryo --title "Cryogenics" --app viewer   # or name the app yourself
+```
+
+`new --app` writes `meta.app`, `meta.app_url` and the app's `requires` into the graph and
+seeds the palette with the app's kinds, so the graph is shaped by the app rather than by
+whatever the agent felt like. The skill's own copy of that knowledge — for the case where
+nothing is installed yet — is `scripts/apps.json`; the app's own `app.json`, fetched beside
+its viewer, wins once it is here. Schemas: `references/apps.md`.
+
+Nothing is installed without a yes: a viewer runs in the user's browser with their data
+inside it.
 
 ## Viewers are separate, and pluggable
 
@@ -262,14 +292,17 @@ kg/
 ├── README.md             this file
 ├── LICENSE
 ├── references/
-│   └── format.md         the kg/1 document format, in full
+│   ├── format.md         the kg/1 document format, in full
+│   └── apps.md           what an app declares, and the catalogue the skill matches against
 ├── scripts/
 │   ├── kg.py             the engine (stdlib only)
+│   ├── apps.json         the known apps: purpose, keywords, requirements, where to fetch
 │   └── adapters/         one file per foreign export format (foresight, …)
 └── assets/
     ├── README.md         how the viewer is built, and where to fetch it from
     ├── viewer.html       the bundled viewer — built elsewhere, copied in (gitignored)
-    └── viewer.version    provenance sidecar: repo, commit, build time, fetch URL
+    ├── viewer.version    provenance sidecar: repo, commit, build time, fetch URL
+    └── viewer.app.json   the app's own declaration: purpose, requirements, kinds, edges
 ```
 
 `storage/` is not here: it belongs to whoever runs the skill, not to the skill.
