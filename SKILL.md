@@ -12,7 +12,7 @@ description: >
   graph of something and needs the right kind of map for it. Produces a
   self-contained interactive HTML page — pan, zoom, search, collapse — plus a
   validated, shareable JSON artifact.
-version: 0.6.2
+version: 0.6.3
 author: Denis Tatarenko
 license: MIT
 platforms: [macos, linux]
@@ -175,6 +175,44 @@ installed, **its own declaration** (`assets/<name>.app.json`, fetched beside the
 takes over — the app defines the goal and the skill does not argue with it. A discovery
 service for the paid tier replaces that list, not the commands that read it. Full schemas:
 `references/apps.md`.
+
+## Controlling the picture
+
+Two ways to control how a graph looks, and both are data — never a change to the viewer.
+
+**Direct: the user asks for it.**
+
+| the user says | you run | what it does |
+|---|---|---|
+| "make these bigger", "this is the important one" | `--set size=6` (1–10), `set-node --id x --set size=8` | node weight |
+| "this relation is strong", "66 papers cite both" | `add-edge … --weight 66` | line thickness |
+| "companies in the centre, subjects on the periphery" | `--set ring=0` … `--set ring=3` | concentric placement |
+| "move this one to the left of that" | `--set x=-800 --set y=0`, `set-node … --set x=…` | exact position |
+| "make that one a different colour" | `set-palette --kind preprint --color "#aabbcc"` | a kind's colour |
+
+**Intrinsic: what happens when nobody asks.** A node with no `size` is drawn by how
+connected it is; an edge with `weight` 1 is a hairline; a graph with no `ring` and no
+positions is laid out by the viewer. This is the default because a map has to be legible on
+arrival — the user should be adding emphasis, not making the thing readable in the first
+place.
+
+`ring` beats a force layout (the page then says `· arranged by ring`) and every node with
+`x`,`y` beats both. The two coexist: a node with a ring *and* an `x`,`y` keeps the position
+it was given.
+
+## The starter vocabulary, and what is not in it
+
+A research map starts from six kinds — `publication`, `researcher`, `subject`, `lab`,
+`institution`, `company` — with meanings and default rings in the app's declaration
+(`app.json` → `kinds`, `visuals`). `publication` is the one to reach for first: it is what a
+DOI identifies, and it is the main object of a field map.
+
+A kind outside the list is not an error: it renders, it gets a stable colour, it appears in
+the legend, and any property it carries gets its own panel row. The same is true of a
+property — `add-node --set venue=Nature` needs no declaration anywhere. So when the graph
+wants a `trial`, or a `funding round`, or a `patent`, the answer is `add-node --kind trial`,
+not a new viewer. **If something set this way does not render, that is an app bug worth
+reporting — not a reason to edit the app.**
 
 ## When to Use
 

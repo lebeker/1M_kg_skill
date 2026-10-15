@@ -103,6 +103,13 @@ DEFAULT_COLORS = {
     "evidence": "#8d99ae",
     "treatment": "#e07a5f",
     # ── research branch (default vocabulary) ───────────────────────────
+    # The main cases of a research map, and the names the viewer's starter palette uses, so a
+    # graph built with no app declared still comes out in the same colours as one built with
+    # the research app. `scientist`/`concept`/`research` are older names and still work.
+    "publication": "#cdd9e5",
+    "researcher": "#d47fa6",
+    "scientist": "#d47fa6",
+    "subject": "#7b9ecb",
     "concept": "#7b9ecb",
     "lab": "#93c47d",
     "company": "#f5a623",
@@ -122,6 +129,12 @@ def kind_color(kind: str, colors: dict) -> str:
 # ------------------------------------------------------------------ loading
 
 def load(path: Path) -> dict:
+    if path.is_dir():
+        doc = graph_file_in(path)
+        if doc is None:
+            raise SystemExit(f"error: {path} is a folder with no graph document in it.\n"
+                             f"  a graph folder holds graph.json or its one .json file")
+        path = doc
     if not path.exists():
         return {"meta": {"title": path.stem, "schema": SCHEMA, "colors": dict(DEFAULT_COLORS)},
                 "nodes": [], "edges": []}
@@ -448,8 +461,17 @@ def workspace_graphs() -> list[dict]:
 def resolve_graph(value: str | None) -> Path:
     """--graph is an id from the workspace or a path. No --graph: the current graph."""
     if value:
-        if "/" in value or value.endswith(".json") or Path(value).expanduser().is_file():
-            return Path(value).expanduser()
+        p = Path(value).expanduser()
+        # A graph is a folder with a document in it, so handing over the folder is a normal
+        # thing to do — a traceback out of open() is not an answer.
+        if p.is_dir():
+            doc = graph_file_in(p)
+            if doc is None:
+                raise SystemExit(f"error: {p} is a folder with no graph document in it.\n"
+                                 f"  a graph folder holds graph.json or its one .json file")
+            return doc
+        if "/" in value or value.endswith(".json") or p.is_file():
+            return p
         cand = graph_file_in(graph_dir(value))
         if cand is not None:
             return cand
@@ -1028,7 +1050,10 @@ def main() -> int:
     p = with_graph(sub.add_parser("add-node"))
     p.add_argument("--id", required=True); p.add_argument("--label", required=True)
     p.add_argument("--kind", default="concept")
-    p.add_argument("--level", type=float); p.add_argument("--size", type=float, default=2)
+    p.add_argument("--level", type=float)
+    p.add_argument("--size", type=float,
+                   help="a weight from 1 to 10. Leave it out and the reader sizes the node by "
+                        "how connected it is, so the map shows importance without editing.")
     p.add_argument("--style", default="solid"); p.add_argument("--color")
     p.add_argument("--desc", default=""); p.add_argument("--link", default="")
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
@@ -1341,8 +1366,9 @@ def main() -> int:
             if bad:
                 print(f"error: --set wants KEY=VALUE, got: {', '.join(bad)}", file=sys.stderr)
                 return 2
-            n = {"id": a.id, "label": a.label, "kind": a.kind, "size": a.size,
+            n = {"id": a.id, "label": a.label, "kind": a.kind,
                  "style": a.style, "desc": a.desc, "link": a.link, **extra}
+            if a.size is not None: n["size"] = a.size
             if a.level is not None: n["level"] = a.level
             if a.color: n["color"] = a.color
             g["nodes"].append(n); save(g, path)

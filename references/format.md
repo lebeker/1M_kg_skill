@@ -66,11 +66,12 @@ silently drops a colour.
 | `label` | yes | what the reader sees |
 | `kind` | yes | the type. Determines colour. Any string is allowed |
 | `level` | no | vertical position. Convention: low = foundational/concrete, high = abstract/evidence |
-| `size` | no | visual weight, standing in for importance |
+| `size` | no | visual weight, standing in for importance. Leave it out and the reader draws the node by **how connected it is** — size is a control, not a requirement |
 | `style` | no | `solid` (settled), `hollow` (proposed), `cloud` / `critter` (threatening or eroding), `skull` (abandoned) |
 | `desc` | no | free text |
 | `link` | no | a single URL. Adapters lift URLs out of `desc` when a format buries them there (see `scripts/adapters/`) |
-| `x`,`y` | no | authored position. If **every** node has them they are used as given; a graph with none is laid out in the browser on open (the page says `layout computed here`) |
+| `x`,`y` | no | authored position. If **every** node has them they are used as given; if any node carries `ring` the rings are built; with neither, the graph is laid out in the browser on open (the page says `layout computed here`) |
+| `ring` | no | placement as a concentric ring: `0` is the centre, higher numbers are further out. The usual assignment is organisations 0, researchers 1, publications 2, subjects 3 |
 | anything else | no | a property in its own right. Carried through untouched and given its own row in the panel |
 
 `level` and `style` are what make a graph readable at a glance instead of a hairball.
@@ -107,14 +108,22 @@ do not go and edit the viewer's source to make your own field visible.
 | `label` | what the relation is. Unlabelled edges render as bare lines — avoid |
 | `dir` | `in` = the arrow points at `to`; omit for an undirected relation |
 | `time` | optional estimate or date, e.g. `2018`, `"18mo"`, `"years"` |
-| `weight` | optional line weight |
+| `weight` | optional line weight — the reader draws it as line thickness, so a co-citation count of 66 reads as a strong relation |
 
-**Two conventions worth more than the schema.** A piece of work — a paper, a trial, a
-patent — is an **edge, not a node**: `from` the researcher, `to` the subject, `label` the
-title, `time` the year. And two organisations working on the same subject get an edge
-**between them**, labelled with that subject. Together they turn a graph of dots into a
-graph where the researcher is visibly connected to what they work on and companies cluster
-around what they share.
+**Three conventions worth more than the schema.**
+
+A piece of work — a paper, a trial, a patent — may be an **edge** (`from` the researcher,
+`to` the subject, `label` the title, `time` the year) or a **node** of kind `publication`
+carrying its `doi`. The node form is what to use when the work itself has to be connected to
+anything: a DOI of its own, a co-citation count against another work, a venue. An edge cannot
+be cited; a node can.
+
+Two organisations working on the same subject get an edge **between them**, labelled with
+that subject — that is what makes a cluster legible instead of a fan of lines into one dot.
+
+Size and placement are asked for, not applied: `size` on the nodes you care about, `weight`
+on the relations you measured, `ring` to say centre/middle/periphery. Everything left out is
+filled in from the graph itself, so a document with none of them still reads.
 
 ## What the engine guarantees
 

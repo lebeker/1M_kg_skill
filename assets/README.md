@@ -94,14 +94,24 @@ what it needs to be useful, and the node kinds and edges a graph for it is made 
 { "id": "viewer",
   "title": "Research field map",
   "purpose": "Map a research field so it can be looked at…",
-  "keywords": ["research", "field", "longevity", "…"],
+  "keywords": ["research", "field", "paper", "publication", "…"],
   "requires":   { "skills": ["kg"], "plugins": [], "tools": ["openalex"] },
   "recommends": { "tools": ["a web-search tool"] },
   "tool_notes": { "openalex": "what it gives you, and why the graph needs it" },
-  "kinds": [ { "kind": "concept", "color": "#7b9ecb", "meaning": "…" } ],
-  "edges": [ { "pattern": "scientist → concept", "label": "the title of the work",
-               "meaning": "a piece of work is an EDGE, not a node" } ] }
+  "kinds": [ { "kind": "publication", "color": "#cdd9e5",
+               "meaning": "a work — the thing a DOI identifies" } ],
+  "kind_notes": { "one word per thing": "…" },
+  "edges": [ { "pattern": "researcher → publication", "label": "authored",
+               "meaning": "the main link of a research field" } ],
+  "visuals": { "node size": "…", "edge power": "…", "placement": "…" },
+  "alternative": { "a work as an edge": "…" } }
 ```
+
+`kinds` is a **starter set, not a schema**: it exists so the main cases of a research map
+come out recognisable, and `visuals` says how size, weight and placement are controlled.
+Neither constrains a graph — a kind or a property outside the declaration is legal, and the
+viewer renders it. `apps.md` in `references/` has the full keys; the engine reads `kinds`
+and `edges` and ignores the prose.
 
 It is authored in the app's own repository (`app.json`, next to the viewer's source) and
 published at:
