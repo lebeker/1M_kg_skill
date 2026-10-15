@@ -58,9 +58,12 @@ answering it must not need the network.
 - **`requires`** is what the graph cannot be built without. **`recommends`** is what makes
   it better; say so, and do not block on it.
 - **`tool_notes`** is the "why we need it" a user has to hear before agreeing to anything.
-- The viewer is tag-pinned (`viewer-v0.0.2` never changes). The declaration is not: it says
+- The viewer is tag-pinned (the tag `apps.json` names never changes). The declaration is not: it says
   what the app is for, which does not change when the build does, and it stays readable at
   `main`.
+- **Bump the pinned tag only once the tag exists.** A catalogue entry pointing at an
+  unpublished tag makes `fetch-app` fail for everyone, so the entry trails the release by one
+  step: publish, verify the URL answers, then point `apps.json` at it.
 
 A **discovery service** for the paid tier replaces this file, not the commands that read it:
 the same list, fetched from a server, with the same fields.

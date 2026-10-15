@@ -12,7 +12,7 @@ description: >
   graph of something and needs the right kind of map for it. Produces a
   self-contained interactive HTML page — pan, zoom, search, collapse — plus a
   validated, shareable JSON artifact.
-version: 0.6.1
+version: 0.6.2
 author: Denis Tatarenko
 license: MIT
 platforms: [macos, linux]
@@ -458,8 +458,10 @@ broken:
   tags; clicking a hit centres it. `Esc` clears.
 - **2D / 3D** — the buttons top-right switch renderer. The 3D one is loaded on demand
   (about 1.4 MB), so the first click takes a moment. `fit` reframes the graph.
-- **Selection** — clicking a node shows its label, kind, level, size, source link and
-  description.
+- **Selection** — clicking a node shows its label, kind, level, size, and then **every other
+  property the node carries, each in its own row**: the panel has no fixed list of fields, so
+  a property you put in the document is shown without anyone changing the app. A value that
+  looks like a DOI or a URL resolves to a link.
 
 ✅ You have described at least search and the 2D/3D switch. A viewer nobody knows how to
 drive is the same as no viewer.

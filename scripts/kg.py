@@ -60,7 +60,7 @@ Graph format (kg/1):
 {
   "meta": {"title": str, "schema": "kg/1", "colors": {kind: hex}},
   "nodes": [{"id","label","kind","level","size","style","color","x","y",
-             "desc","link","tags":[]}],
+             "desc","link","doi","tags":[]}],
   "edges": [{"from","to","label","dir","weight","time","desc"}]
 }
 style: solid | hollow | cloud | critter | skull   (default solid)
@@ -343,6 +343,28 @@ GRAPH_ELEMENT_RE = re.compile(
 def slug(text: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", (text or "").strip().lower()).strip("-")
     return s or "graph"
+
+
+def parse_sets(pairs: list[str]) -> tuple[dict, list[str]]:
+    """`KEY=VALUE` pairs -> the properties they name.
+
+    Numbers stay numbers, so a reader can sort on them. A pair that is not KEY=VALUE is
+    returned instead of guessed at: silently dropping a property someone asked for is how a
+    graph ends up quietly missing a field, and nobody notices until they look at the picture.
+    """
+    out: dict = {}
+    bad: list[str] = []
+    for kv in pairs:
+        k, sep, v = kv.partition("=")
+        k = k.strip()
+        if not sep or not k:
+            bad.append(kv)
+            continue
+        try:
+            out[k] = float(v) if v.strip() else v
+        except ValueError:
+            out[k] = v
+    return out, bad
 
 
 def workspace_root() -> Path:
@@ -1009,6 +1031,11 @@ def main() -> int:
     p.add_argument("--level", type=float); p.add_argument("--size", type=float, default=2)
     p.add_argument("--style", default="solid"); p.add_argument("--color")
     p.add_argument("--desc", default=""); p.add_argument("--link", default="")
+    p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                   help="any other property, set as given (repeatable). A graph is data: "
+                        "the reader shows what you put here, so a new field is an edit to "
+                        "the graph, never a change to the app that draws it. Example: "
+                        "--set doi=10.1126/science.abn9257")
 
     p = with_graph(sub.add_parser("add-edge"))
     p.add_argument("--from", dest="src", required=True)
@@ -1017,6 +1044,9 @@ def main() -> int:
     p.add_argument("--dir", default="none", choices=["none", "in", "out", "both"])
     p.add_argument("--weight", type=float, default=1)
     p.add_argument("--time", default="")
+    p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                   help="any other property on the edge (repeatable), e.g. "
+                        "--set rel=co-cited")
 
     p = with_graph(sub.add_parser("set-node"))
     p.add_argument("--id", required=True)
@@ -1307,15 +1337,26 @@ def main() -> int:
         if a.cmd == "add-node":
             if any(n["id"] == a.id for n in g["nodes"]):
                 print(f"error: node id '{a.id}' already exists", file=sys.stderr); return 2
+            extra, bad = parse_sets(a.set)
+            if bad:
+                print(f"error: --set wants KEY=VALUE, got: {', '.join(bad)}", file=sys.stderr)
+                return 2
             n = {"id": a.id, "label": a.label, "kind": a.kind, "size": a.size,
-                 "style": a.style, "desc": a.desc, "link": a.link}
+                 "style": a.style, "desc": a.desc, "link": a.link, **extra}
             if a.level is not None: n["level"] = a.level
             if a.color: n["color"] = a.color
             g["nodes"].append(n); save(g, path)
-            print(f"added node {a.id} ({a.kind}) -> {len(g['nodes'])} nodes"); return 0
+            print(f"added node {a.id} ({a.kind}) -> {len(g['nodes'])} nodes")
+            if extra:
+                print(f"          with {', '.join(sorted(extra))} — its own row in the panel")
+            return 0
         if a.cmd == "add-edge":
+            extra, bad = parse_sets(a.set)
+            if bad:
+                print(f"error: --set wants KEY=VALUE, got: {', '.join(bad)}", file=sys.stderr)
+                return 2
             g["edges"].append({"from": a.src, "to": a.dst, "label": a.label,
-                               "dir": a.dir, "weight": a.weight, "time": a.time})
+                               "dir": a.dir, "weight": a.weight, "time": a.time, **extra})
             save(g, path)
             print(f"added edge {a.src} -> {a.dst} -> {len(g['edges'])} edges"); return 0
         if a.cmd == "remove-node":
@@ -1420,14 +1461,15 @@ def main() -> int:
                   f"{len(g['edges'])} edges")
             return 0
         if a.cmd == "set-node":
+            extra, bad = parse_sets(a.set)
+            if bad:
+                print(f"error: --set wants KEY=VALUE, got: {', '.join(bad)}", file=sys.stderr)
+                return 2
             for n in g["nodes"]:
                 if n["id"] == a.id:
-                    for kv in a.set:
-                        k, _, v = kv.partition("=")
-                        try: v = float(v)
-                        except ValueError: pass
-                        n[k] = v
-                    save(g, path); print(f"updated {a.id}: {a.set}"); return 0
+                    n.update(extra)
+                    save(g, path); print(f"updated {a.id}: {a.set}")
+                    return 0
             print(f"error: no node '{a.id}'", file=sys.stderr); return 2
         if a.cmd == "info":
             # The first command an unknown agent should run on an unfamiliar graph.

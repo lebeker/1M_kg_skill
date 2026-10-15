@@ -71,9 +71,33 @@ silently drops a colour.
 | `desc` | no | free text |
 | `link` | no | a single URL. Adapters lift URLs out of `desc` when a format buries them there (see `scripts/adapters/`) |
 | `x`,`y` | no | authored position. If **every** node has them they are used as given; a graph with none is laid out in the browser on open (the page says `layout computed here`) |
+| anything else | no | a property in its own right. Carried through untouched and given its own row in the panel |
 
 `level` and `style` are what make a graph readable at a glance instead of a hairball.
 A graph where everything is `level 0, style solid` is a ring of dots and argues nothing.
+
+### Adding a property or a kind is a data act, never a code change
+
+The document is the schema. The viewer has no list of fields and no list of kinds: it draws
+what it is given, colours a kind from `meta.colors` (falling back to a stable hash), builds
+the legend from the kinds actually present, and gives every property it does not lay out
+itself its own row in the panel. A value that looks like a DOI or a URL becomes a link there.
+
+| you want | command |
+|---|---|
+| a property on a new node | `add-node … --set doi=10.1126/science.abn9257` (repeatable) |
+| a property on an existing node | `set-node --id <id> --set key=value` |
+| a property on an edge | `add-edge … --set rel=co-cited` |
+| a new kind | `set-palette --kind paper --color "#8b93a1"`, then `add-node --kind paper` — legend and colours follow |
+| a new edge relation | `add-edge … --label "co-cited in 66 works"` — an edge's relation is its label |
+
+`doi` is the canonical case. A work — a paper, a trial, a patent — that a graph promotes to a
+node carries its DOI as **an identifier, not prose**: `desc` carries sentences, `doi` carries
+the one string that finds the record again, and the panel resolves it to `https://doi.org/…`
+rather than leaving the reader to dig it out of a paragraph.
+
+**A property you set that does not appear is an app bug, not a graph problem.** Report it —
+do not go and edit the viewer's source to make your own field visible.
 
 ## Edges
 
