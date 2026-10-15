@@ -12,7 +12,7 @@ description: >
   graph of something and needs the right kind of map for it. Produces a
   self-contained interactive HTML page — pan, zoom, search, collapse — plus a
   validated, shareable JSON artifact.
-version: 0.6.0
+version: 0.6.1
 author: Denis Tatarenko
 license: MIT
 platforms: [macos, linux]
@@ -387,52 +387,62 @@ line behind. It refuses ids that do not exist rather than reporting a cheerful `
 
 ## Handing the graph to a human
 
-**A filename is not a link.** Writing `index.html` in a reply gives the human nothing
-they can click, and a relative path they cannot paste into a browser. This is the most
-common way this skill fails its user.
+**A filename is not a link**, and neither is a path the human has to assemble. This is the
+most common way this skill fails its user.
 
-`render` prints the link itself — give it verbatim. It is a `file:///…` URL:
-
-```bash
-python3 "$ENGINE" render --graph field
-# rendered 1033 nodes / 795 edges -> …/storage/field/index.html
-#   file:///…/storage/field/index.html
-```
-
-If a person is in the session — the normal case — use `serve` instead, because it stays
-current while you work:
+**The page is the deliverable, and it is self-contained** — the whole graph is inlined into
+the HTML — so it needs no server, no network and nothing left running:
 
 ```bash
-python3 "$ENGINE" serve --graph field --port 8300
+python3 "$ENGINE" render --graph field                        # → storage/field/index.html
+python3 "$ENGINE" open   --html storage/field/index.html       # prints the link, opens it
 ```
 
-Report the **full URL, verbatim**: `http://localhost:8300/index.html`.
+- **If your client has a preview pane** — the Hermes desktop app does — open the file in the
+  pane. That is the clickable button; a bare `http://localhost:…`, or a `file:///…` pasted as
+  text, is not.
+- Otherwise `render` prints the `file:///…` link itself: give it **verbatim**. `open` also
+  launches the user's real browser.
+- Nothing has to stay alive for the page to work. That is the point of it.
 
-- **Full scheme and host.** Never a bare filename, never a path they must assemble.
-- **Say it is live.** "It re-renders from the graph on every refresh — I keep editing,
-  you just hit reload." `serve` re-reads the JSON and re-injects it through the template
-  on each request, so an edit made with `add-node` shows up on reload.
-- **Report the port `serve` actually printed.** It walks forward if the default is
-  taken. Do not assume 8300.
+### Only serve when there is something to keep live
+
+`serve` re-reads the JSON on every request, so while you are still adding nodes the human can
+hit reload instead of asking you again:
+
+```bash
+python3 "$ENGINE" serve --graph field --port 8300      # → http://localhost:8300/index.html
+```
+
+Use it when the human asked to watch the graph being built, or cannot open a local file. Not
+otherwise — and **stop it when you are done**. A server nobody asked for is someone's mystery
+process the next morning.
+
+- Report the URL **verbatim**, full scheme and host, and **the port it printed** — never
+  assume 8300.
+- **It does not walk to another port.** If the port is taken, `serve` says so, names the
+  listener, and exits: that usually means a server is *already* serving this graph, so probe
+  that URL before starting a second one.
 - **If the server is not running, say so.** A URL that 404s is worse than no URL.
 
 ### If `serve` cannot bind — read the error, do not hunt for ports
 
-A sandboxed agent may be **forbidden from binding any socket at all**. Then *every* port
-fails identically, and the error says so:
+The error tells the two cases apart, and they call for different answers:
 
 ```
-error: could not listen on any port in 8300..8319: [Errno 1] Operation not permitted
-  This is a PERMISSION failure, not a busy port. ...
+error: could not listen on 8300: [Errno 48] Address already in use
+  Port 8300 is already in use — python3, pid 46270. Something is probably serving …
+    http://localhost:8300/index.html                        ← probe it first
+error: could not listen on 8300: [Errno 1] Operation not permitted
+  This is a PERMISSION failure, not a busy port. …          ← use the page instead
 ```
 
-- **Do not loop through other port ranges.** If 8300 fails and `lsof` shows nothing
-  listening, it is a sandbox restriction; 8400 and 12345 fail the same way. Trying more
+- **Do not loop through other port ranges.** If a port fails and `lsof` shows nothing
+  listening, it is a sandbox restriction and 8400 and 12345 fail identically. Trying more
   ports wastes the user's time and reads as a broken tool.
-- **Fall back to the static page, handed over as a clickable URL.** `render` already
-  prints it; `open` prints it and opens it. Say plainly that it is **static** — it will
-  not update until you re-render. That limitation is honest and workable; a dead
-  `http://` link is not.
+- **Fall back to the page, handed over as a clickable link.** `render` prints it and `open`
+  prints it and opens it. Say plainly that it is **static** — it will not update until you
+  re-render. That limitation is honest and workable; a dead `http://` link is not.
 
 ✅ The human can click something that opens the current graph. If they cannot, the
 handover failed regardless of how good the graph is.

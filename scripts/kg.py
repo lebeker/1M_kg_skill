@@ -1083,7 +1083,9 @@ def main() -> int:
                                                 "every change"))
     p.add_argument("--app", help="template to use (default: viewer.html)")
     p.add_argument("--out", help="what to serve (default: next to the graph)")
-    p.add_argument("--port", type=int, default=8300)
+    p.add_argument("--port", type=int, default=8300,
+                   help="port to listen on (default 8300); serve does not walk to another "
+                        "port — if it is taken it says who holds it and exits")
     p.add_argument("--title", default=None)
 
     a = ap.parse_args()
@@ -1615,27 +1617,49 @@ def main() -> int:
             allow_reuse_address = True
             daemon_threads = True
 
+        # Bind exactly the port asked for, and refuse rather than walking forward. Walking is
+        # how two servers end up alive while the URL in the user's chat points at the first
+        # one, and how "the server is temperamental" gets said about a tool that was fine. A
+        # URL handed to a human has to keep meaning what it meant when it was handed over.
+        port = a.port
         httpd = None
         first_err = None
-        for port in range(a.port, a.port + 20):
-            try:
-                httpd = Server(("127.0.0.1", port), Handler)
-                break
-            except OSError as e:
-                if first_err is None:
-                    first_err = e
+        try:
+            httpd = Server(("127.0.0.1", port), Handler)
+        except OSError as e:
+            first_err = e
 
         if httpd is None:
-            print(f"error: could not listen on any port in {a.port}..{a.port + 19}: "
-                  f"{first_err}", file=sys.stderr)
+            # Careful with errno: 48 is EADDRINUSE on macOS but EADDRNOTAVAIL on Linux. The
+            # old code listed 48 as a permission failure, so a busy port on a Mac was reported
+            # as a sandbox restriction and the agent went hunting for ports.
+            err = getattr(first_err, "errno", None)
+            busy = err == 98 or (err == 48 and sys.platform == "darwin")
+            print(f"error: could not listen on {port}: {first_err}", file=sys.stderr)
             print("", file=sys.stderr)
-            if getattr(first_err, "errno", None) in (1, 13, 48, 49):
+            if busy:
+                holder = ""
+                try:
+                    r = subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
+                                       capture_output=True, text=True, timeout=5)
+                    rows = [ln.split() for ln in r.stdout.strip().splitlines()[1:] if ln.strip()]
+                    if rows:
+                        holder = f" — {rows[0][0]}, pid {rows[0][1]}"
+                except Exception:
+                    pass
+                print(f"  Port {port} is already in use{holder}. Something is probably serving",
+                      file=sys.stderr)
+                print("  this graph already. Probe it before starting a second server:",
+                      file=sys.stderr)
+                print(f"    http://localhost:{port}/{out.name}", file=sys.stderr)
+                print(f"  Or ask for a different port:  --port {port + 1}", file=sys.stderr)
+            elif err in (1, 13, 49):
                 print("  This is a PERMISSION failure, not a busy port. A sandbox that", file=sys.stderr)
                 print("  forbids binding sockets fails every port the same way — moving to", file=sys.stderr)
                 print("  another port will not help. Serve it from a terminal outside the", file=sys.stderr)
-                print("  sandbox, or use the static file:", file=sys.stderr)
+                print("  sandbox, or hand over the page instead:", file=sys.stderr)
             else:
-                print("  Every candidate port is in use. Try a wider range:", file=sys.stderr)
+                print("  Not a busy port and not a permission failure — read the errno above.", file=sys.stderr)
             print(f"    python3 scripts/kg.py render --graph {graph} --out {out}", file=sys.stderr)
             print(f"    python3 scripts/kg.py open   --html {out}", file=sys.stderr)
             return 2
