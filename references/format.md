@@ -124,9 +124,6 @@ viewer is free to read them that way. The viewer that ships with this skill uses
   partner company (3) is touched. Nothing at or above the level you started from is hidden.
 - What is hidden stays readable as **counted lines from the node you collapsed** — two of a
   company's papers about model organisms give it one line to model organisms at power 2.
-- A node the visible map still **holds** is not hidden: a paper shared with another lab, a
-  researcher who also works elsewhere. Without that, a collapse walks out through shared work and
-  takes the whole field with it.
 - Those lines are the **view's own**: they exist in the page, never in `kg.json`. A document that
   never mentioned them is still the document, and `validate` never sees them.
 
@@ -137,9 +134,19 @@ python3 scripts/kg.py visuals --graph my-map --hierarchy "works at,authored"
 ```
 
 With a hierarchy declared, only those relations are crossed — a citation into a company's paper
-is a fact about the field, not a membership. With none declared, any relation may be crossed. In
-both cases the two limits above hold: nothing at or above the level you started from, and nothing
-the visible map still holds.
+is a fact about the field, not a membership. With none declared, any relation may be crossed.
+
+**The walk is strictly downhill, and that is the whole rule.** A step is allowed only from a node
+to a neighbour of a *lower* level than that node: a company takes its people, its people take their
+papers, and a paper has nothing below it, so the walk stops there. Nothing at or above the level
+you started from is ever hidden.
+
+Getting this wrong is easy in both directions, and both were tried: walking down from the *node
+you started at* rather than from where you are lets the descent climb back up out of a paper into
+every co-author on the map (one company swallowed 48 of 81 nodes); guarding on "is the visible map
+still holding this?" instead left 56 of 59 nodes with a button that did nothing at all. If you
+change this rule, sweep **every** node in a real graph — checking the one node you designed it
+around proves nothing.
 
 Because it is the same axis the document already declares, a graph can change what collapse does
 by declaring different multipliers — no code, no setting.
