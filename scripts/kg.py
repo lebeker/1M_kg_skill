@@ -1962,14 +1962,18 @@ def main() -> int:
         d.mkdir(parents=True, exist_ok=True)
         f = d / name
         existed = f.exists()
-        if not existed:
-            body = a.text if a.text else (
+        if a.text:
+            # --text writes what was given, whether or not a note is already there: an agent
+            # that has written the prose and passes it in means it, and silently keeping the
+            # skeleton instead would be the worst of both.
+            f.write_text(a.text if a.text.endswith("\n") else a.text + "\n")
+        elif not existed:
+            f.write_text(
                 f"# {title}\n\n"
                 f"<!-- What this is, why it matters to the subject, and where the claim comes "
                 f"from.\n     A note is read by the reader *and* by the next agent: write both "
                 f"audiences. -->\n\n"
                 f"## What it is\n\n\n## Why it matters here\n\n\n## Sources\n\n")
-            f.write_text(body)
         if a.node:
             for x in g["nodes"]:
                 if x["id"] == a.node:
