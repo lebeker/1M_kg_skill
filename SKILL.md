@@ -12,7 +12,7 @@ description: >
   graph of something and needs the right kind of map for it. Produces a
   self-contained interactive HTML page — pan, zoom, search, collapse — plus a
   validated, shareable JSON artifact.
-version: 0.6.3
+version: 0.6.4
 author: Denis Tatarenko
 license: MIT
 platforms: [macos, linux]
@@ -184,17 +184,26 @@ Two ways to control how a graph looks, and both are data — never a change to t
 
 | the user says | you run | what it does |
 |---|---|---|
-| "make these bigger", "this is the important one" | `--set size=6` (1–10), `set-node --id x --set size=8` | node weight |
-| "this relation is strong", "66 papers cite both" | `add-edge … --weight 66` | line thickness |
+| "make these bigger", "this is the important one" | `--set weight=8` (`set-node --id x --set weight=8`) | node size, in the graph's own units |
+| "this relation is strong", "this one is background" | `add-edge … --power 1.5`, `set-edge --from a --to b --power 0.05` | line thickness — 1 is normal, 0.05 is a hairline |
+| "66 papers cite both" | `--set cocited=66` and a low `--power` | the count is data; the power is emphasis |
 | "companies in the centre, subjects on the periphery" | `--set ring=0` … `--set ring=3` | concentric placement |
 | "move this one to the left of that" | `--set x=-800 --set y=0`, `set-node … --set x=…` | exact position |
 | "make that one a different colour" | `set-palette --kind preprint --color "#aabbcc"` | a kind's colour |
 
-**Intrinsic: what happens when nobody asks.** A node with no `size` is drawn by how
-connected it is; an edge with `weight` 1 is a hairline; a graph with no `ring` and no
-positions is laid out by the viewer. This is the default because a map has to be legible on
-arrival — the user should be adding emphasis, not making the thing readable in the first
-place.
+**Intrinsic: what happens when nobody asks.** A node with no `weight` and no `size` is drawn
+from ½ × the summed power of its edges × a multiplier for its kind; an edge with no `power` is
+an ordinary relation; a graph with no `ring` and no positions is laid out by the viewer. This is
+the default because a map has to be legible on arrival — the user should be adding emphasis, not
+making the thing readable in the first place.
+
+**Say what the sizes mean.** `weigh --graph X --metric "relevant papers"` records the method in
+`meta.weight`, and every panel row then reads `weight 0.203 — by relevant papers`. Contribution in
+relevant papers is the fair first assumption; being asked for grant money, headcount or citations
+instead is `set-node --set weight=…` per node plus a new `--metric`, with nothing else touched.
+A graph that does not say what its circles measure cannot be argued with. `references/recipes.md`
+has this, and the two other jobs (a paper-only citation map; the whole field), as command
+sequences.
 
 `ring` beats a force layout (the page then says `· arranged by ring`) and every node with
 `x`,`y` beats both. The two coexist: a node with a ring *and* an `x`,`y` keeps the position
@@ -549,6 +558,8 @@ inside a gitignored folder (`kg/`, `web/`); never `--out` a file to the repo roo
 ## References
 
 - `references/format.md` — the `kg/1` document format in full.
+- `references/recipes.md` — the three jobs (one paper's citation neighbourhood, the whole
+  field, a map centred on something and weighed by a stated metric) as command sequences.
 - `references/apps.md` — what an app declares (purpose, requirements, kinds, edges), the
   catalogue the skill matches against, and the rules around installing one.
 - `scripts/adapters/README.md` — how to add an importer for another tool's export.

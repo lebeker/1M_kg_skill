@@ -65,8 +65,9 @@ silently drops a colour.
 | `id` | yes | stable, unique, short. Edges refer to it. Never reuse it for different content |
 | `label` | yes | what the reader sees |
 | `kind` | yes | the type. Determines colour. Any string is allowed |
-| `level` | no | vertical position. Convention: low = foundational/concrete, high = abstract/evidence |
-| `size` | no | visual weight, standing in for importance. Leave it out and the reader draws the node by **how connected it is** — size is a control, not a requirement |
+| `level` | no | vertical position, the third axis: convention is low = foundational/concrete, high = abstract/evidence. **The 3D view is the only place it moves anything** — a ring- or force-laid-out 2D map ignores it, and a graph that does not use it should not carry it |
+| `size` | no | a weight **set by hand**, in the same units as `weight`. Leave it out and the node is drawn from its `weight` instead |
+| `weight` | no | how important the node is **on this map**: the number the drawing is a picture of. Half the summed power of the node's edges times a multiplier for its kind, unless the document states it (see *How a node's size is decided*) |
 | `style` | no | `solid` (settled), `hollow` (proposed), `cloud` / `critter` (threatening or eroding), `skull` (abandoned) |
 | `desc` | no | free text |
 | `link` | no | a single URL. Adapters lift URLs out of `desc` when a format buries them there (see `scripts/adapters/`) |
@@ -77,9 +78,44 @@ silently drops a colour.
 `level` and `style` are what make a graph readable at a glance instead of a hairball.
 A graph where everything is `level 0, style solid` is a ring of dots and argues nothing.
 
+### How a node's size is decided
+
+```
+weight = ½ × (sum of the powers of the node's edges) × kind multiplier
+        ↑ the document's own `weight`, when a node states one
+drawn radius in px = 2.5 × √weight            (floor 1.5 px, ceiling 28 px)
+```
+
+The multipliers say what a kind is worth on *this* map: a publication is a small element of a
+field map (0.1), a researcher is the middle (1), a lab, institution or company is a body of work
+(3), a subject or concept is what the map is about (10). They are **data** — a graph carries its
+own, and `weigh --mul subject=20` changes it for that graph alone:
+
+```json
+"meta": { "weight": { "metric": "relevant papers", "kind_multipliers": { "publication": 0.1, "subject": 10 },
+                      "note": "one relevant paper per unit of connection" } }
+```
+
+**The declared metric is what the drawing follows.** `metric` is a phrase the panel shows beside
+every weight (*"weight 0.203 — by relevant papers"*), so a reader can tell what a circle is a
+claim about. Stating the weights beats declaring a formula: a node whose `weight` the document
+gives is drawn from it, and every node's row says which of the two it came from.
+
+That is the honest way to change what the map measures. Weighting a field by **contribution in
+relevant papers** is a fair first assumption; being asked to weigh it by **grant money raised**
+instead is the same graph with one property rewritten per node, and the panel then says so:
+
+```bash
+kg.py set-node --id max-planck --set weight=48        # €48m of grants, the unit is in the metric
+kg.py weigh --graph longevity --metric "grant funding (€m)" --bake
+```
+
+`--bake` writes the result into each node's `size`, so a graph that has to look the same
+everywhere carries the numbers itself.
+
 ### Adding a property or a kind is a data act, never a code change
 
-The document is the schema. The viewer has no list of fields and no list of kinds: it draws
+The viewer has no list of fields and no list of kinds: it draws
 what it is given, colours a kind from `meta.colors` (falling back to a stable hash), builds
 the legend from the kinds actually present, and gives every property it does not lay out
 itself its own row in the panel. A value that looks like a DOI or a URL becomes a link there.
@@ -108,7 +144,8 @@ do not go and edit the viewer's source to make your own field visible.
 | `label` | what the relation is. Unlabelled edges render as bare lines — avoid |
 | `dir` | `in` = the arrow points at `to`; omit for an undirected relation |
 | `time` | optional estimate or date, e.g. `2018`, `"18mo"`, `"years"` |
-| `weight` | optional line weight — the reader draws it as line thickness, so a co-citation count of 66 reads as a strong relation |
+| `power` | how much this relation weighs, where **1 is a normal relation** and 0.05 is one that barely counts. Drawn as line thickness; below 0.5 it is a hairline at half opacity. `--power`, `--weight` (the older spelling), or `--set power=0.05` |
+| `count`, `cocited`, … | a measured number is **data, not emphasis**: `--set cocited=66` puts "66 papers cite both" in the panel, while the power stays the emphasis you meant |
 
 **Three conventions worth more than the schema.**
 
@@ -121,9 +158,15 @@ be cited; a node can.
 Two organisations working on the same subject get an edge **between them**, labelled with
 that subject — that is what makes a cluster legible instead of a fan of lines into one dot.
 
-Size and placement are asked for, not applied: `size` on the nodes you care about, `weight`
-on the relations you measured, `ring` to say centre/middle/periphery. Everything left out is
-filled in from the graph itself, so a document with none of them still reads.
+A **citation** is an edge with a direction: `--from` the citing work, `--to` the cited one,
+`--dir in`. A co-citation, on the other hand, is a weak relation between two works and is
+drawn as one: `--power 0.05 --set cocited=66` says *66 papers cite both, and this is background,
+not structure*. A field map reads well when the citation skeleton is strong and the
+co-citation texture is faint; a graph where co-citations are as loud as authorship argues nothing.
+
+Size and placement are asked for, not applied: `weight` or `size` on the nodes you care about,
+`power` on the relations that matter, `ring` to say centre/middle/periphery. Everything left out
+is filled in from the graph itself, so a document with none of them still reads.
 
 ## What the engine guarantees
 

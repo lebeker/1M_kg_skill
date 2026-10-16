@@ -73,6 +73,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import math
 import os
 import re
 import shutil
@@ -124,6 +125,34 @@ DEFAULT_COLORS = {
 
 def kind_color(kind: str, colors: dict) -> str:
     return colors.get(kind) or colors.get("default") or "#888888"
+
+
+# --------------------------------------------------------------- importance
+#
+# Half the sum of the powers of the edges touching a node, times a multiplier for its kind. The
+# viewer computes the same thing for a graph that does not state a weight; `weigh` states it, and
+# can bake it into `size` so the numbers travel with the document. Keep the two in step:
+# webapp/src/kg.ts, DEFAULT_KIND_MULTIPLIERS / WEIGHT_SCALE / WEIGHT_MIN_PX / WEIGHT_MAX_PX.
+DEFAULT_SIZE_MULTIPLIERS = {
+    "publication": 0.1, "paper": 0.1, "article": 0.1,
+    "researcher": 1.0, "scientist": 1.0, "person": 1.0,
+    "lab": 3.0, "institution": 3.0, "company": 3.0,
+    "subject": 10.0, "concept": 10.0,
+}
+WEIGHT_SCALE, WEIGHT_MIN_PX, WEIGHT_MAX_PX = 2.5, 1.5, 28.0
+
+
+def px_from_weight(score: float) -> float:
+    return min(WEIGHT_MAX_PX, max(WEIGHT_MIN_PX, WEIGHT_SCALE * math.sqrt(max(0.0, score))))
+
+
+def edge_power(e: dict) -> float:
+    """An edge's power, defaulting to 1. `weight` is the older spelling."""
+    for key in ("power", "weight"):
+        v = e.get(key)
+        if isinstance(v, (int, float)):
+            return float(v)
+    return 1.0
 
 
 # ------------------------------------------------------------------ loading
@@ -1067,7 +1096,14 @@ def main() -> int:
     p.add_argument("--to", dest="dst", required=True)
     p.add_argument("--label", default="")
     p.add_argument("--dir", default="none", choices=["none", "in", "out", "both"])
-    p.add_argument("--weight", type=float, default=1)
+    p.add_argument("--power", type=float, default=1,
+                   help="how much this relation weighs, where 1 is a normal relation and 0.05 "
+                        "is one that barely counts (drawn as a hairline at low opacity). A "
+                        "measured count is a different thing: put it in --set and it shows in "
+                        "the panel, while the power stays the emphasis you mean")
+    p.add_argument("--weight", dest="legacy_weight", type=float, default=None,
+                   help="the old name for --power, refused so that a measured count of 66 "
+                        "cannot silently become a line six pixels wide")
     p.add_argument("--time", default="")
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                    help="any other property on the edge (repeatable), e.g. "
@@ -1077,9 +1113,33 @@ def main() -> int:
     p.add_argument("--id", required=True)
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
 
+    p = with_graph(sub.add_parser("set-edge", help="set properties on an edge that exists"))
+    p.add_argument("--from", dest="src", required=True)
+    p.add_argument("--to", dest="dst", required=True)
+    p.add_argument("--power", type=float, default=None,
+                   help="how much this relation weighs: 1 is normal, 0.05 barely counts. Raise it "
+                        "to say a relation matters more, lower it to say it is incidental")
+    p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                   help="the properties to set (repeatable)")
+
     p = with_graph(sub.add_parser("set-palette", help="set the colour for a node kind"))
     p.add_argument("--kind", required=True)
     p.add_argument("--color", required=True, help="#rrggbb or hsl(...)")
+
+    p = with_graph(sub.add_parser("weigh", help="record how node importance was measured"))
+    p.add_argument("--metric", default="",
+                   help="what the numbers measure, in words: \"relevant papers\", \"grant "
+                        "funding (USD)\". It is shown beside every weight, so a reader can tell "
+                        "what a node's size is a claim about")
+    p.add_argument("--mul", action="append", default=[], metavar="KIND=N",
+                   help="what one unit of a node's connections is worth for that kind "
+                        "(repeatable). Defaults: publication 0.1, researcher 1, "
+                        "lab/institution/company 3, subject 10")
+    p.add_argument("--note", default="", help="a sentence for the reader about the method")
+    p.add_argument("--bake", action="store_true",
+                   help="also write the result into each node's `size`, so the graph looks the "
+                        "same anywhere without recomputing")
+    p.add_argument("--top", type=int, default=10, help="how many nodes to list")
 
     p = with_graph(sub.add_parser("set-meta", help="set a top-level meta field"))
     p.add_argument("--key", required=True); p.add_argument("--value", required=True)
@@ -1346,13 +1406,77 @@ def main() -> int:
             print(f"current graph is now {gid}")
         return 0
 
-    if a.cmd in ("add-node", "add-edge", "set-node", "set-palette", "set-meta", "stats",
+    if a.cmd in ("add-node", "add-edge", "set-node", "set-edge", "set-palette", "weigh", "set-meta", "stats",
                  "remove-node", "remove-edge", "validate", "merge", "info"):
         path = resolve_graph(a.graph); g = load(path)
         if a.cmd == "set-palette":
             g["meta"].setdefault("colors", {})[a.kind] = a.color
             save(g, path)
             print(f"palette[{a.kind}] = {a.color}")
+            return 0
+        if a.cmd == "set-edge":
+            extra, bad = parse_sets(a.set)
+            if bad:
+                print(f"error: --set wants KEY=VALUE, got: {', '.join(bad)}", file=sys.stderr)
+                return 2
+            if a.power is not None:
+                extra["power"] = a.power
+            if not extra:
+                print("error: nothing to set — pass --power and/or --set KEY=VALUE",
+                      file=sys.stderr)
+                return 2
+            hits = [e for e in g["edges"] if e.get("from") == a.src and e.get("to") == a.dst]
+            if not hits:
+                print(f"error: no edge {a.src} -> {a.dst} in this graph", file=sys.stderr)
+                return 2
+            migrated = 0
+            for e in hits:
+                # `weight` on an edge used to be read as power, which is how a measured count of
+                # 66 became a line six pixels wide. Once a power is stated, the old key goes.
+                if a.power is not None and "weight" in e:
+                    del e["weight"]
+                    migrated += 1
+                e.update(extra)
+            save(g, path)
+            print(f"updated {len(hits)} edge(s) {a.src} -> {a.dst}: "
+                  f"{', '.join(f'{k}={v}' for k, v in extra.items())}")
+            if migrated:
+                print(f"          dropped the old `weight` on {migrated} edge(s) — it used to be "
+                      f"read as power; keep a count in its own property instead")
+            return 0
+        if a.cmd == "weigh":
+            mult, bad = parse_sets(a.mul)
+            if bad:
+                print(f"error: --mul wants KIND=NUMBER, got: {', '.join(bad)}", file=sys.stderr)
+                return 2
+            mult = {**DEFAULT_SIZE_MULTIPLIERS, **mult}
+            touching: dict[str, float] = {n["id"]: 0.0 for n in g["nodes"]}
+            for e in g["edges"]:
+                p = edge_power(e)
+                for end in (e.get("from"), e.get("to")):
+                    if end in touching:
+                        touching[end] += p
+            scored = []
+            for n in g["nodes"]:
+                stated = n.get("weight")
+                score = (float(stated) if isinstance(stated, (int, float))
+                         else 0.5 * touching[n["id"]] * mult.get(n.get("kind", ""), 1.0))
+                scored.append((score, n))
+                if a.bake:
+                    # `size` is a weight in the document, so store the weight that draws at the
+                    # same size the score would. One meaning for `size`, computed or written.
+                    n["size"] = round(max(0.0, (px_from_weight(score) - 3) / 1.6), 2)
+            block: dict = {"kind_multipliers": mult}
+            if a.metric:
+                block["metric"] = a.metric
+            if a.note:
+                block["note"] = a.note
+            g["meta"]["weight"] = block
+            save(g, path)
+            print(f"weight recorded for {len(g['nodes'])} nodes, by "
+                  f"\"{a.metric or 'connections'}\"" + (" — baked into size" if a.bake else ""))
+            for score, n in sorted(scored, key=lambda t: -t[0])[:max(0, a.top)]:
+                print(f"  {score:9.3f}  {n.get('kind', '?'):<12} {n.get('label', n['id'])[:44]}")
             return 0
         if a.cmd == "set-meta":
             g["meta"][a.key] = a.value
@@ -1377,12 +1501,30 @@ def main() -> int:
                 print(f"          with {', '.join(sorted(extra))} — its own row in the panel")
             return 0
         if a.cmd == "add-edge":
+            if a.legacy_weight is not None:
+                print("error: --weight is the old name for an edge's strength and is no longer "
+                      "read: a count of 66 used to become a line six pixels wide.\n"
+                      "       Use --power for emphasis (1 is a normal relation, 0.05 is a "
+                      "hairline) and --set count=66 to keep the measured number.", file=sys.stderr)
+                return 2
             extra, bad = parse_sets(a.set)
             if bad:
                 print(f"error: --set wants KEY=VALUE, got: {', '.join(bad)}", file=sys.stderr)
                 return 2
-            g["edges"].append({"from": a.src, "to": a.dst, "label": a.label,
-                               "dir": a.dir, "weight": a.weight, "time": a.time, **extra})
+            e = {"from": a.src, "to": a.dst, **extra}
+            # Only what was meant: an empty label or an absent direction is not a property, and
+            # a document full of defaults nobody chose is a document nobody can read.
+            if a.label:
+                e["label"] = a.label
+            if a.dir and a.dir != "none":
+                e["dir"] = a.dir
+            if a.time:
+                e["time"] = a.time
+            # Written explicitly, and only when it is not the default: an edge of power 1 in the
+            # document says nothing.
+            if a.power != 1:
+                e["power"] = a.power
+            g["edges"].append(e)
             save(g, path)
             print(f"added edge {a.src} -> {a.dst} -> {len(g['edges'])} edges"); return 0
         if a.cmd == "remove-node":
