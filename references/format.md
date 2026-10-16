@@ -113,6 +113,23 @@ kg.py weigh --graph longevity --metric "grant funding (€m)" --bake
 `--bake` writes the result into each node's `size`, so a graph that has to look the same
 everywhere carries the numbers itself.
 
+### One kind axis, and what a viewer may do with it
+
+The multipliers are not only a drawing rule: they are the map's own notion of **level**, and a
+viewer is free to read them that way. The viewer that ships with this skill uses them for
+**collapse** — folding a node's part of the map away without deleting anything from the document:
+
+- It descends from the node you collapsed *down* the multipliers: a company (3) takes its people
+  (1) and their papers (0.1) with it, and neither the concepts those papers are about (10) nor a
+  partner company (3) is touched. Nothing at or above the level you started from is hidden.
+- What is hidden stays readable as **counted lines from the node you collapsed** — two of a
+  company's papers about model organisms give it one line to model organisms at power 2.
+- Those lines are the **view's own**: they exist in the page, never in `kg.json`. A document that
+  never mentioned them is still the document, and `validate` never sees them.
+
+Because it is the same axis the document already declares, a graph can change what collapse does
+by declaring different multipliers — no code, no setting.
+
 ### Adding a property or a kind is a data act, never a code change
 
 The viewer has no list of fields and no list of kinds: it draws
