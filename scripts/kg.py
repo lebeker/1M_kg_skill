@@ -1238,6 +1238,9 @@ def main() -> int:
                         "records how many connections it was written against, so `review` can "
                         "say later which sentences the graph has grown past")
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
+    p.add_argument("--unset", action="append", default=[], metavar="KEY",
+                   help="drop a property: what a document was made to carry by mistake "
+                        "has to be removable, or the mistake is permanent")
 
     p = with_graph(sub.add_parser("set-edge", help="set properties on an edge that exists"))
     p.add_argument("--from", dest="src", required=True)
@@ -1256,6 +1259,9 @@ def main() -> int:
                    help="which way it points")
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                    help="the properties to set (repeatable)")
+    p.add_argument("--unset", action="append", default=[], metavar="KEY",
+                   help="drop a property: what a document was made to carry by mistake "
+                        "has to be removable, or the mistake is permanent")
 
     p = with_graph(sub.add_parser("set-palette", help="set the colour for a node kind"))
     p.add_argument("--kind", required=True)
@@ -1589,9 +1595,9 @@ def main() -> int:
                     extra[key] = flag
             if a.dir is not None and a.dir != "none":
                 extra["dir"] = a.dir
-            if not extra:
+            if not extra and not a.unset:
                 print("error: nothing to set — pass --power, --style, --color, --dash, --width, "
-                      "--label, --dir and/or --set KEY=VALUE", file=sys.stderr)
+                      "--label, --dir, --set KEY=VALUE and/or --unset KEY", file=sys.stderr)
                 return 2
             hits = [e for e in g["edges"] if e.get("from") == a.src and e.get("to") == a.dst]
             if not hits:
@@ -1604,10 +1610,14 @@ def main() -> int:
                 if a.power is not None and "weight" in e:
                     del e["weight"]
                     migrated += 1
+                for k in a.unset:
+                    e.pop(k, None)
                 e.update(extra)
             save(g, path)
-            print(f"updated {len(hits)} edge(s) {a.src} -> {a.dst}: "
-                  f"{', '.join(f'{k}={v}' for k, v in extra.items())}")
+            said = ", ".join(f"{k}={v}" for k, v in extra.items())
+            if a.unset:
+                said += (", " if said else "") + "dropped " + ", ".join(a.unset)
+            print(f"updated {len(hits)} edge(s) {a.src} -> {a.dst}: {said}")
             if migrated:
                 print(f"          dropped the old `weight` on {migrated} edge(s) — it used to be "
                       f"read as power; keep a count in its own property instead")
@@ -1843,9 +1853,9 @@ def main() -> int:
                 return 2
             if a.desc is not None:
                 extra["desc"] = a.desc
-            if not extra:
-                print("error: nothing to set — pass --set KEY=VALUE and/or --desc \"...\"",
-                      file=sys.stderr)
+            if not extra and not a.unset:
+                print("error: nothing to set — pass --set KEY=VALUE, --desc \"...\" and/or "
+                      "--unset KEY", file=sys.stderr)
                 return 2
             deg = {}
             for e in g["edges"]:
@@ -1858,9 +1868,13 @@ def main() -> int:
                     # sentences have not been re-read since the graph grew around them.
                     if "desc" in extra:
                         n["desc_rev"] = deg.get(n["id"], 0)
+                    for k in a.unset:
+                        n.pop(k, None)
                     n.update(extra)
                     save(g, path)
                     shown = ", ".join(f"{k}={str(v)[:40]}" for k, v in extra.items())
+                    if a.unset:
+                        shown += (", " if shown else "") + "dropped " + ", ".join(a.unset)
                     print(f"updated {a.id}: {shown}")
                     return 0
             print(f"error: no node '{a.id}'", file=sys.stderr); return 2
