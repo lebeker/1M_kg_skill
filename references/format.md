@@ -142,7 +142,11 @@ do not go and edit the viewer's source to make your own field visible.
 |---|---|
 | `from`, `to` | node ids |
 | `label` | what the relation is. Unlabelled edges render as bare lines — avoid |
-| `dir` | `in` = the arrow points at `to`; omit for an undirected relation |
+| `dir` | `in` = the relation points at `to`; `out` = it points at `from`; `both`. Omit for an undirected relation |
+| `style` | what the relation **looks** like, space-separated: a stroke (`solid`, `dashed`, `dotted`) and/or a shape (`arrow`, `double`, `clamped`, `rectangle`, `triangle`). `--style "dotted arrow"`. An unknown word is refused rather than stored: a style the renderer ignores is a silent loss of meaning |
+| `color` | this relation's own colour, e.g. `#8fa3c8`. `--color` |
+| `dash` | an explicit dash pattern, e.g. `"6 4"`. `--dash`. Drawn on the 2D overlay layer, so any pattern works |
+| `width` | an explicit line width in px, for when `power` is not the right control. `--width` |
 | `time` | optional estimate or date, e.g. `2018`, `"18mo"`, `"years"` |
 | `power` | how much this relation weighs, where **1 is a normal relation** and 0.05 is one that barely counts. Drawn as line thickness; below 0.5 it is a hairline at half opacity. `--power`, `--weight` (the older spelling), or `--set power=0.05` |
 | `count`, `cocited`, … | a measured number is **data, not emphasis**: `--set cocited=66` puts "66 papers cite both" in the panel, while the power stays the emphasis you meant |
@@ -159,14 +163,67 @@ Two organisations working on the same subject get an edge **between them**, labe
 that subject — that is what makes a cluster legible instead of a fan of lines into one dot.
 
 A **citation** is an edge with a direction: `--from` the citing work, `--to` the cited one,
-`--dir in`. A co-citation, on the other hand, is a weak relation between two works and is
-drawn as one: `--power 0.05 --set cocited=66` says *66 papers cite both, and this is background,
-not structure*. A field map reads well when the citation skeleton is strong and the
-co-citation texture is faint; a graph where co-citations are as loud as authorship argues nothing.
+`--dir in`. Direction is *stored* by `dir` and *drawn* only when asked: `visuals --arrows on`
+for the whole graph, or `--style arrow` on one relation. A citation map wants heads; a field map
+usually reads better without them, and the choice belongs to the graph, not to the viewer.
+
+A **co-citation** is a weak relation between two works, and it should look weak in both
+dimensions: `--power 0.05 --style dashed --set cocited=66` says *66 papers cite both, this is
+background, not structure*. A field map reads well when the citation skeleton is strong and the
+co-citation texture is faint and broken; a graph where co-citations are as loud as authorship
+argues nothing. (The engine warns when a node is labelled a co-citation at power > 0.1, because
+that mistake is silent until somebody looks at the picture.)
 
 Size and placement are asked for, not applied: `weight` or `size` on the nodes you care about,
 `power` on the relations that matter, `ring` to say centre/middle/periphery. Everything left out
 is filled in from the graph itself, so a document with none of them still reads.
+
+## `meta.visuals` — how this graph wants to look
+
+Taste is data too, so it lives in the document. The app has defaults; a document overrides them,
+which is the difference between "the viewer draws arrows" and "this graph draws arrows".
+
+| key | meaning |
+|---|---|
+| `arrows` | draw a head on a directed relation. **Off unless asked for** (`visuals --arrows on`) |
+| `edge_width` | multiply every relation's width (`visuals --edge-width 1.4`) |
+| `node_scale` | multiply every node's radius |
+| `halo` | draw a ring around a node that has nodes collapsed inside it (default on) |
+| `max_nodes` | the node budget this graph was *measured* at (`capacity --nodes 4000 --note "…"`). A fallback, not a rule: the viewer measures the host it is running on |
+
+## Notes: the long form of a description
+
+A graph says what is connected to what. It does not say what any of it means, and for a field
+being surveyed that is most of the work. So the long form of a node's description is a markdown
+file in a `docs/` folder beside the document — one subject, one folder, its own notes:
+
+```
+storage/longevity-map/
+  graph.json
+  index.html            # written by render; the page you hand to somebody
+  docs/
+    overview.md         # the subject itself: what this map is, what it is missing
+    hallmarks.md        # one node's note, pointed at by the node's `doc`
+```
+
+`kg.py note --graph <id> --node <hallmarks>` creates the file from a skeleton and sets
+`doc: docs/hallmarks.md` on the node; `kg.py note --graph <id>` writes the subject's overview
+note. `render` inlines every note into the page (a page opened from `file://` cannot fetch its
+neighbours), where it appears in a second panel — reachable from the node's **read the note**
+button, or the header's **notes** button for the overview.
+
+The panel reads notes anywhere and can edit a *copy* anywhere: **a page opened from `file://`
+cannot write to the reader's disk.** The ways back to the file are explicit — download, copy, or
+hand it to the agent that owns the folder. This is a real constraint of the shape (a file, no
+server), not an unfinished feature, and the reason the notes stay plain markdown in a
+predictable place.
+
+**A body must say what it is.** `subject`, `concept`, `lab`, `institution` and `company` nodes
+are refused by `add-node` without `--desc`: one sentence saying what the thing is and why it
+matters *for this subject*. Publications are exempt — a title and a DOI are their identity. A
+description is written about something at a moment, so the engine records the node's connection
+count when the sentence is written (`desc_rev`); `review` then lists the bodies the graph has
+grown past, which is the work of keeping a survey honest rather than a formality.
 
 ## What the engine guarantees
 
@@ -176,7 +233,8 @@ is filled in from the graph itself, so a document with none of them still reads.
 - `check` reports whether the graph can be shown here: the app, its `app_url`, and what
   `requires` declares — exiting non-zero when the app is missing.
 - `render` emits a self-contained page — no CDN, no network, opens from disk.
-- `serve` re-renders from the JSON on every request, so refresh shows current state.
+- `render` is the only way a graph becomes a page: `render`, refresh the tab, done. No
+  server exists in the engine, so no port, no PID and no URL that can go stale.
 
 ## Portability
 

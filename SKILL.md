@@ -8,11 +8,11 @@ description: >
   last time", "turn this bibliography into a map", "visualise my literature review",
   or wants to explore, enrich, import, validate or render an existing kg/1 graph JSON.
   Also use for "what graphs do I have", "show me the <name> graph", "let's work on
-  <graph>", "start/serve the graph server" and "open the knowledge graph", or asks for a
+  <graph>", "open the knowledge graph", or asks for a
   graph of something and needs the right kind of map for it. Produces a
   self-contained interactive HTML page — pan, zoom, search, collapse — plus a
   validated, shareable JSON artifact.
-version: 0.6.4
+version: 0.7.0
 author: Denis Tatarenko
 license: MIT
 platforms: [macos, linux]
@@ -66,7 +66,7 @@ The shape it writes is the whole format, and it is small:
     "title": "Telomere attrition — mini example",
     "schema": "kg/1",
     "app": "viewer",
-    "app_url": "https://…/viewer-v0.0.4/viewer.html",
+    "app_url": "https://…/viewer-v0.0.5/viewer.html",
     "requires": { "skills": ["kg"], "plugins": [], "tools": ["openalex"] }
   },
   "nodes": [
@@ -117,7 +117,7 @@ graph. That is what makes the three asks answerable:
 | "show me the longevity one" | `python3 "$ENGINE" render --graph longevity` → give them the `file://` link it prints |
 | "let's work on longevity" | `python3 "$ENGINE" use longevity` — every later command needs no `--graph` |
 | "what's in it?" | `python3 "$ENGINE" info` |
-| "keep it open while I edit" | `python3 "$ENGINE" serve --graph longevity` → give them the `http://localhost:PORT/index.html` it prints |
+| "show me the graph", "open it" | `python3 "$ENGINE" render` → then the preview pane, or `open --html <the page>` | prints |
 | "which viewers are there?" | `python3 "$ENGINE" apps` |
 | "can I see this one?" | `python3 "$ENGINE" check` — reports the app, what the graph needs, and what is missing |
 | "it needs openalex" | `python3 "$ENGINE" require --tool openalex` — records it on the graph |
@@ -190,6 +190,10 @@ Two ways to control how a graph looks, and both are data — never a change to t
 | "companies in the centre, subjects on the periphery" | `--set ring=0` … `--set ring=3` | concentric placement |
 | "move this one to the left of that" | `--set x=-800 --set y=0`, `set-node … --set x=…` | exact position |
 | "make that one a different colour" | `set-palette --kind preprint --color "#aabbcc"` | a kind's colour |
+| "I don't want to see arrows" | `visuals --graph X --arrows off` (the default), or `--style arrow` on one edge | whether a directed relation gets a head — the graph decides, not the viewer |
+| "those edges should be blue and dotted" | `add-edge … --style dotted --color "#8fa3c8"`, or `set-edge --from a --to b --style "dashed arrow"` | the relation's appearance: stroke (`solid`/`dashed`/`dotted`), shape (`arrow`/`double`/`clamped`/`rectangle`/`triangle`), colour, dash pattern, width |
+| "this graph should read bigger/smaller" | `visuals --graph X --edge-width 1.4 --node-scale 1.2` | global scale for the whole graph |
+| "10k articles, but my laptop dies" | nothing — the viewer measures the host and collapses what it cannot hold; `capacity --nodes N` only records a fallback | how much of a big graph is drawn |
 
 **Intrinsic: what happens when nobody asks.** A node with no `weight` and no `size` is drawn
 from ½ × the summed power of its edges × a multiplier for its kind; an edge with no `power` is
@@ -204,6 +208,20 @@ instead is `set-node --set weight=…` per node plus a new `--metric`, with noth
 A graph that does not say what its circles measure cannot be argued with. `references/recipes.md`
 has this, and the two other jobs (a paper-only citation map; the whole field), as command
 sequences.
+
+**Bodies must say what they are.** `subject`, `concept`, `lab`, `institution` and `company`
+nodes are refused by `add-node` without `--desc` — one sentence, general and relevant to this
+subject. That is not a formality: on a field map those sentences *are* the reading. When a
+sentence is not enough, `note --graph X --node <id>` writes `docs/<slug>.md` inside the graph's
+folder and points the node at it; `note --graph X` writes the subject's own overview note, which
+is the draft of whatever is being written about this map. `render` inlines every note into the
+page, where it opens in a second panel. `review --graph X` is the work list: bodies with no
+description, and bodies whose sentence was written when the node had fewer connections than it
+has now. `set-node --id <n> --desc "…"` rewrites one and re-dates it.
+
+**The page cannot write to the reader's disk.** It is opened from `file://`, and a browser
+refuses that; so the note panel edits a copy and offers download, copy, or handing the text to
+the agent that owns the folder. Say this rather than promising a save button.
 
 `ring` beats a force layout (the page then says `· arranged by ring`) and every node with
 `x`,`y` beats both. The two coexist: a node with a ring *and* an `x`,`y` keeps the position
@@ -275,17 +293,17 @@ reporting — not a reason to edit the app.**
    fix it now — `set-palette --kind X --color "#rrggbb"` — or the legend will be
    meaningless.
 
-5. **Render to HTML, then screenshot it.**
+5. **Render to HTML, then look at it.**
    ```bash
    python3 "$ENGINE" render                  # -> next to the graph, prints the link
-   python3 "$ENGINE" shot --html storage/field/index.html --out storage/field/map.png
    ```
-   ✅ the HTML is far larger than the JSON and the PNG is non-zero. If `shot` warns that the
-   PNG is small enough to be a flat page, believe it — that is WebGL not starting in
-   headless Chrome, not an empty graph. Do not "fix" the graph for it.
+   ✅ the page is far larger than the JSON — the graph is inlined into it, and it opens over
+   `file://` with no server and no network.
 
-6. **LOOK AT THE PNG.** Use `vision_analyze` on it (or read it directly if you see
-   images). **Never report on a graph you have not looked at.**
+6. **LOOK AT THE PAGE.** The engine has no screenshot command on purpose: it is python3 only,
+   and a headless browser is a dependency the user's machine may not have. Look with whatever
+   your own client has — the preview pane, `vision_analyze` on a screenshot you take, or the
+   user's browser. **Never report on a graph you have not looked at.**
    ✅ You can name the node kinds, the shapes, the levels, and one labelled relation —
    things the JSON alone does not tell you.
 
@@ -311,7 +329,7 @@ reporting — not a reason to edit the app.**
 
 ## Viewers are pluggable — the skill does not carry its own
 
-`render` and `serve` do not draw anything. They take **a template** and put the graph
+`render` does not draw anything. It takes **a template** and puts the graph
 into it. A template is a single-file HTML carrying one element:
 
 ```html
@@ -452,47 +470,16 @@ python3 "$ENGINE" open   --html storage/field/index.html       # prints the link
   launches the user's real browser.
 - Nothing has to stay alive for the page to work. That is the point of it.
 
-### Only serve when there is something to keep live
+### There is no server in this skill, and that is a decision
 
-`serve` re-reads the JSON on every request, so while you are still adding nodes the human can
-hit reload instead of asking you again:
+The page is a file. `render` writes it, the pane or `open` shows it, and **nothing has to stay
+alive** for it to work — which is the whole reason it is built this way. The engine has no
+`serve` and no `shot`: a listening socket is a process the user has to remember to kill, and a
+headless browser is a dependency their machine may not have. Both used to be here and both cost
+more than they gave.
 
-```bash
-python3 "$ENGINE" serve --graph field --port 8300      # → http://localhost:8300/index.html
-```
-
-Use it when the human asked to watch the graph being built, or cannot open a local file. Not
-otherwise — and **stop it when you are done**. A server nobody asked for is someone's mystery
-process the next morning.
-
-- Report the URL **verbatim**, full scheme and host, and **the port it printed** — never
-  assume 8300.
-- **It does not walk to another port.** If the port is taken, `serve` says so, names the
-  listener, and exits: that usually means a server is *already* serving this graph, so probe
-  that URL before starting a second one.
-- **If the server is not running, say so.** A URL that 404s is worse than no URL.
-
-### If `serve` cannot bind — read the error, do not hunt for ports
-
-The error tells the two cases apart, and they call for different answers:
-
-```
-error: could not listen on 8300: [Errno 48] Address already in use
-  Port 8300 is already in use — python3, pid 46270. Something is probably serving …
-    http://localhost:8300/index.html                        ← probe it first
-error: could not listen on 8300: [Errno 1] Operation not permitted
-  This is a PERMISSION failure, not a busy port. …          ← use the page instead
-```
-
-- **Do not loop through other port ranges.** If a port fails and `lsof` shows nothing
-  listening, it is a sandbox restriction and 8400 and 12345 fail identically. Trying more
-  ports wastes the user's time and reads as a broken tool.
-- **Fall back to the page, handed over as a clickable link.** `render` prints it and `open`
-  prints it and opens it. Say plainly that it is **static** — it will not update until you
-  re-render. That limitation is honest and workable; a dead `http://` link is not.
-
-✅ The human can click something that opens the current graph. If they cannot, the
-handover failed regardless of how good the graph is.
+While a graph is being edited, re-render (`python3 "$ENGINE" render`) and tell the human to
+refresh the page they already have open. That is the live loop, and it has no port in it.
 
 ### What the human can do in the viewer
 
@@ -521,7 +508,8 @@ drive is the same as no viewer.
 3. `stats` the two files and compare counts by kind. The backup is *not* named
    `graph.json`, so it does not shadow the graph: `graph.json` always wins in a folder.
 4. Re-render, screenshot, **look**. Then state what changed in words.
-5. If `serve` is running, tell the human to refresh — the change is already visible.
+5. `render` again and tell the human to refresh the page they already have open — the file
+   is the same one, so the same tab shows the new graph.
 
 The diff is the product. "Two new labs entered this space since March, both working on
 the same mechanism from different directions" is the output; a list of node ids is not.
@@ -558,8 +546,12 @@ inside a gitignored folder (`kg/`, `web/`); never `--out` a file to the repo roo
 ## References
 
 - `references/format.md` — the `kg/1` document format in full.
-- `references/recipes.md` — the three jobs (one paper's citation neighbourhood, the whole
-  field, a map centred on something and weighed by a stated metric) as command sequences.
+- `references/recipes.md` — the jobs (one paper's citation neighbourhood, the whole field, a
+  map centred on something and weighed by a stated metric, the survey with its notes, and a
+  10k-article pull) as command sequences.
+- `references/providers.md` — where a list of works can come from: OpenAlex, Crossref, PubMed,
+  Europe PMC, arXiv, Semantic Scholar, CORE, DOAJ, and a web search as the last resort — with
+  what each is good for, what it costs, and what it cannot give you.
 - `references/apps.md` — what an app declares (purpose, requirements, kinds, edges), the
   catalogue the skill matches against, and the rules around installing one.
 - `scripts/adapters/README.md` — how to add an importer for another tool's export.

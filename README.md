@@ -57,8 +57,7 @@ python3 "$ENGINE" info                         # what is in the current one
 |---|---|
 | `storage/<id>/graph.json` | the graph itself — a small, diffable `kg/1` document |
 | `storage/<id>/index.html` | a self-contained page (no CDN, works offline, opens anywhere) |
-| `storage/<id>/<name>.png` | a screenshot, so an **agent** can look at its own output |
-| a local URL | `serve` keeps the page live: run any command, refresh, see it |
+| `storage/<id>/docs/*.md` | an Open Knowledge Format note per node, the long form of a description |
 
 ## Quick start
 
@@ -73,23 +72,19 @@ python3 "$ENGINE" add-node --id telo --label "Telomere attrition" \
 python3 "$ENGINE" add-node --id lab1 --label "Blackburn Lab" --kind lab --level 3 --size 3
 python3 "$ENGINE" add-edge --from lab1 --to telo --label studies --dir in
 python3 "$ENGINE" render                        # -> storage/field/index.html + a link
-python3 "$ENGINE" shot --html storage/field/index.html --out storage/field/map.png
+python3 "$ENGINE" open --html storage/field/index.html
 ```
 
-Requirements: `python3` (standard library only — no pip install) and a Chrome, Chromium
-or Edge binary for screenshots. `new` creates `storage/<id>/` for you.
+Requirements: `python3` (standard library only — no pip install, no node, no bun, and no
+browser of ours: the page is a plain file that opens over `file://`). `new` creates
+`storage/<id>/` for you.
 
-## Keeping it live
+## Keeping it live, with no server in the loop
 
-```bash
-python3 "$ENGINE" serve --graph field --port 8300
-# → http://localhost:8300/index.html
-```
-
-The server re-reads the graph and re-injects it into the viewer on every refresh. Run any
-`add-node` / `add-edge` / `set-node` command in another shell, refresh the browser, and
-the new state is there. No restart, no rebuild step. That is the loop that makes the
-artifact something you *keep* rather than something you generate once.
+Run any `add-node` / `add-edge` / `set-node` command and `render` again; the tab the human
+already has open shows the new state on refresh. There is deliberately **no server command**:
+a listening socket is a process somebody has to remember to kill, and a URL in a chat stops
+meaning what it meant the moment that process ends. The page is the artifact.
 
 ## The loop an agent must follow
 
@@ -124,9 +119,7 @@ levels, sizes, colours — rather than the HTML by hand.
 | `validate` | check conformance to `kg/1` |
 | `info` / `stats` | what is in this graph; counts by kind, style, level |
 | `render` | template + graph → self-contained HTML, and prints the link |
-| `shot` | HTML → PNG (for agents to look at) |
-| `serve` | local live-reloading server |
-| `open` | open the rendered page in a browser |
+| `open` | open the rendered page in the browser the user already has |
 
 ## Choosing the app, from what the user asked for
 
@@ -158,7 +151,7 @@ inside it.
 
 ## Viewers are separate, and pluggable
 
-`render` and `serve` draw nothing themselves. They take a **template** — a single-file
+`render` draws nothing itself. It takes a **template** — a single-file
 HTML carrying
 
 ```html
@@ -174,7 +167,7 @@ itself — `meta.app` — with `--app <name>` overriding it for one run:
 
 ```json
 { "meta": { "schema": "kg/1", "app": "viewer",
-            "app_url": "https://…/viewer-v0.0.4/viewer.html",
+            "app_url": "https://…/viewer-v0.0.5/viewer.html",
             "requires": { "skills": ["kg"], "plugins": [], "tools": ["openalex"] } } }
 ```
 

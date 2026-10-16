@@ -33,9 +33,7 @@ Subcommands:
   fetch-app       install an app from the catalogue: viewer + its own declaration
   fetch-viewer    download a viewer into assets/ — no node, no bun, no build
   render          write a standalone HTML from a template + the graph
-  shot            headless-Chrome screenshot of that HTML -> PNG
   open            open the HTML in the real browser (for the human)
-  serve           serve the graph, re-rendering on every change
 
 Workspace:
   Graphs live in <root>/storage/<id>/graph.json — one folder per graph, so a graph's
@@ -52,7 +50,7 @@ What a graph needs (meta.app / meta.app_url / meta.requires):
 Renderers:
   A template is a single-file HTML carrying
   <script id="kg-graph" type="application/json">__KG_GRAPH__</script>.
-  assets/viewer.html is the one that ships; `render`/`serve` substitute the graph into
+  assets/viewer.html is the one that ships; `render` substitutes the graph into
   that element. This engine renders no HTML of its own — the viewer is a separate,
   replaceable artifact.
 
@@ -153,6 +151,30 @@ def edge_power(e: dict) -> float:
         if isinstance(v, (int, float)):
             return float(v)
     return 1.0
+
+
+# --------------------------------------------------------- what a relation looks like
+#
+# A relation's appearance is data, not a code change. `style` is a space-separated list of words:
+# the stroke (`solid`, `dashed`, `dotted`) and/or the shape (`arrow`, `double`, `clamped`,
+# `rectangle`, `triangle`), so `"dotted arrow"` is a style and reads the way somebody would say
+# it. `color`, `dash` (an explicit pattern like "6 4") and `width` are the other knobs, and
+# `power` remains the emphasis. The viewer reads this same vocabulary; keep the two in step:
+# webapp/src/kg.ts, EDGE_STROKES / EDGE_SHAPES / edgeDash / edgeShape.
+EDGE_STROKES = ("solid", "dashed", "dotted")
+EDGE_SHAPES = ("arrow", "double", "clamped", "rectangle", "triangle")
+EDGE_WORDS = EDGE_STROKES + EDGE_SHAPES
+EDGE_DIRS = ("in", "out", "both", "none")
+
+
+# ------------------------------------------------------- nodes that must say what they are
+#
+# A publication can stand alone: a title, a DOI, a count. A *body* cannot. A concept, a lab, a
+# company is in the graph because it means something for this subject, and a body with no
+# description is the difference between a map and a scatter of dots. The kinds below must be
+# described when they are created; `review` then shows which descriptions have gone stale as the
+# graph grew around them, which is the work of keeping a field survey honest.
+NEEDS_DESC = ("subject", "concept", "lab", "institution", "company")
 
 
 # ------------------------------------------------------------------ loading
@@ -361,11 +383,69 @@ def conform(g: dict) -> dict:
         warnings.append(f"kinds with no colour {unpainted} — they get a hashed colour and "
                         "the legend lies")
 
-    # --- structure an agent should know before editing
-    deg = {}
+    # --- how connected each node is: used by the drift check, and by the summary below
+    deg_now = {}
     for e in edges:
-        deg[e.get("from")] = deg.get(e.get("from"), 0) + 1
-        deg[e.get("to")] = deg.get(e.get("to"), 0) + 1
+        deg_now[e.get("from")] = deg_now.get(e.get("from"), 0) + 1
+        deg_now[e.get("to")] = deg_now.get(e.get("to"), 0) + 1
+    deg = deg_now
+
+    # --- what each relation says it looks like, against what the viewer can draw
+    unknown_style, style_count = {}, 0
+    for e in edges:
+        words = str(e.get("style") or "").lower().replace(",", " ").split()
+        if not words:
+            continue
+        style_count += 1
+        for w in words:
+            if w not in EDGE_WORDS:
+                unknown_style.setdefault(w, 0)
+                unknown_style[w] += 1
+    if unknown_style:
+        warnings.append(
+            "edge style word(s) the renderer does not know: "
+            + ", ".join(f"{w!r} ({n}x)" for w, n in sorted(unknown_style.items()))
+            + f" — known: {', '.join(EDGE_WORDS)}. An unknown word is ignored (the edge draws "
+              "solid), which is a silent loss of meaning.")
+
+    # --- a relation whose label contradicts its own strength
+    weak_words = ("co-cit", "cocit", "co cit", "cited together")
+    loud = []
+    for e in edges:
+        label = str(e.get("label") or "").lower()
+        if any(w in label for w in weak_words) and edge_power(e) > 0.1:
+            loud.append(f"{e.get('from')}->{e.get('to')}")
+    if loud:
+        warnings.append(f"{len(loud)} edge(s) are labelled a co-citation but carry power > 0.1 "
+                        f"({', '.join(loud[:4])}{'…' if len(loud) > 4 else ''}) — co-citation is "
+                        "texture, not structure: --power 0.05 --style dashed, with the count in "
+                        "--set cocited=N")
+
+    # --- bodies without a description. A map of a field is read through these sentences.
+    thin = [n.get("id") for n in nodes
+            if n.get("kind") in NEEDS_DESC and not (n.get("desc") or "").strip()]
+    if thin:
+        warnings.append(f"{len(thin)} {('/'.join(NEEDS_DESC))} node(s) have no description "
+                        f"({', '.join(str(x) for x in thin[:5])}"
+                        f"{'…' if len(thin) > 5 else ''}) — a body with no description is a dot "
+                        "with a name")
+
+    # --- descriptions written before the graph grew around them: the nodes that have taken on
+    # connections since their sentence was written are the ones whose sentence may be wrong now.
+    stale = []
+    for n in nodes:
+        rev = n.get("desc_rev")
+        if not isinstance(rev, int) or not (n.get("desc") or "").strip():
+            continue
+        if deg_now.get(n.get("id"), 0) > rev:
+            stale.append(n.get("id"))
+    if stale:
+        info.append(f"{len(stale)} node(s) gained connections after their description was "
+                    f"written ({', '.join(str(x) for x in stale[:4])}"
+                    f"{'…' if len(stale) > 4 else ''}) — worth re-reading: "
+                    "python3 scripts/kg.py review --graph <id>")
+
+    # --- structure an agent should know before editing
     lonely = [n.get("id") for n in nodes
               if not deg.get(n.get("id")) and n.get("id") not in has_children]
     if lonely:
@@ -380,6 +460,51 @@ def conform(g: dict) -> dict:
 PLACEHOLDER = "__KG_GRAPH__"
 GRAPH_ELEMENT_RE = re.compile(
     r"(<script[^>]*\bid=[\"\']kg-graph[\"\'][^>]*>)(.*?)(</script>)", re.S)
+# The notes element. A template without it simply has no notes panel; nothing fails.
+DOCS_ELEMENT_RE = re.compile(
+    r"(<script[^>]*\bid=[\"\']kg-docs[\"\'][^>]*>)(.*?)(</script>)", re.S)
+
+DOCS_DIRNAME = "docs"
+DOCS_OVERVIEW = "overview.md"
+
+
+def docs_dir_for(graph: Path) -> Path:
+    """Where a graph's notes live: a `docs/` folder beside the document.
+
+    One subject is one folder, and the notes belong to the subject, not to the viewer and not to
+    the agent that happened to write them. This is also the `docs/` an OKF-shaped workspace
+    already looks for, so the folder is where a reader would expect to find it.
+    """
+    return graph.resolve().parent / DOCS_DIRNAME
+
+
+def collect_docs(graph: Path) -> dict:
+    """Every note in the graph's docs/, keyed by the path a node refers to it by."""
+    out = {}
+    d = docs_dir_for(graph)
+    if not d.is_dir():
+        return out
+    for f in sorted(d.glob("*.md")):
+        try:
+            out[f"{DOCS_DIRNAME}/{f.name}"] = f.read_text()
+        except OSError:
+            continue
+    return out
+
+
+def inject_docs(html: str, docs: dict) -> str:
+    """Put the notes into the template's notes element, the same way the graph goes in.
+
+    They are inlined rather than linked because the page is opened from `file://`, where a
+    browser will not read a file sitting next to it — the same reason the graph is inlined.
+    """
+    if not docs:
+        return html
+    m = DOCS_ELEMENT_RE.search(html)
+    if not m:
+        return html
+    payload = json.dumps(docs, separators=(",", ":")).replace("</script>", "<\\/script>")
+    return html[:m.start(2)] + payload + html[m.end(2):]
 
 
 def slug(text: str) -> str:
@@ -975,12 +1100,15 @@ def file_url(p: Path) -> str:
     return "file://" + urllib.parse.quote(str(p.resolve()))
 
 
-def render(g: dict, out: Path, app: str | None = None) -> Path:
+def render(g: dict, out: Path, app: str | None = None, source: Path | None = None) -> Path:
     """A template plus the graph, written as one self-contained HTML file.
 
     Which template, in order: `--app`, then the graph's own `meta.app`, then the shipped
     `viewer.html`. The graph naming its viewer is the interface — the same JSON can be
     rendered by a different app on a different machine without editing anything.
+
+    `source` is where the document came from, which is also where its notes are: the `docs/`
+    folder beside it travels into the page, so the page stays a file you can hand over.
     """
     app = app or (g.get("meta") or {}).get("app")
     try:
@@ -993,30 +1121,14 @@ def render(g: dict, out: Path, app: str | None = None) -> Path:
                   f"    python3 scripts/kg.py check --install", file=sys.stderr)
         raise
     html = inject(tmpl.read_text(), g)
+    docs = collect_docs(source) if source else {}
+    html = inject_docs(html, docs)
     title = (g.get("meta") or {}).get("title") or "knowledge graph"
     html = re.sub(r"<title>.*?</title>", f"<title>{html_escape(title)}</title>",
                   html, count=1, flags=re.S)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html)
     return out
-
-
-CHROME_CANDIDATES = [
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-]
-
-
-def find_chrome() -> str | None:
-    for c in CHROME_CANDIDATES:
-        if Path(c).exists():
-            return c
-    for name in ("google-chrome", "chromium", "chromium-browser", "chrome"):
-        p = shutil.which(name)
-        if p:
-            return p
-    return None
 
 
 # -------------------------------------------------------------------- main
@@ -1105,12 +1217,26 @@ def main() -> int:
                    help="the old name for --power, refused so that a measured count of 66 "
                         "cannot silently become a line six pixels wide")
     p.add_argument("--time", default="")
+    p.add_argument("--style", default="",
+                   help="how the relation is drawn: a stroke ('solid', 'dashed', 'dotted') "
+                        "and/or a shape ('arrow', 'double', 'clamped', 'rectangle', "
+                        "'triangle'), space-separated. Example: --style \"dashed\" for a "
+                        "co-citation, --style \"arrow\" for a citation")
+    p.add_argument("--color", help="this edge's own colour, e.g. '#8fa3c8'")
+    p.add_argument("--dash", help="an explicit dash pattern instead of a named stroke, "
+                                  "e.g. \"6 4\"")
+    p.add_argument("--width", type=float,
+                   help="an explicit line width in px, when `power` is not the right control")
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                    help="any other property on the edge (repeatable), e.g. "
                         "--set rel=co-cited")
 
     p = with_graph(sub.add_parser("set-node"))
     p.add_argument("--id", required=True)
+    p.add_argument("--desc", default=None,
+                   help="rewrite the node's description. Re-dating it is the point: the engine "
+                        "records how many connections it was written against, so `review` can "
+                        "say later which sentences the graph has grown past")
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
 
     p = with_graph(sub.add_parser("set-edge", help="set properties on an edge that exists"))
@@ -1119,6 +1245,15 @@ def main() -> int:
     p.add_argument("--power", type=float, default=None,
                    help="how much this relation weighs: 1 is normal, 0.05 barely counts. Raise it "
                         "to say a relation matters more, lower it to say it is incidental")
+    p.add_argument("--style", default=None,
+                   help="how this relation is drawn — see add-edge. Pass an empty string to "
+                        "take the style off an edge")
+    p.add_argument("--color", default=None, help="this edge's own colour")
+    p.add_argument("--dash", default=None, help="an explicit dash pattern, e.g. '6 4'")
+    p.add_argument("--width", type=float, default=None, help="an explicit width in px")
+    p.add_argument("--label", default=None, help="the relation's words")
+    p.add_argument("--dir", default=None, choices=["none", "in", "out", "both"],
+                   help="which way it points")
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                    help="the properties to set (repeatable)")
 
@@ -1140,6 +1275,37 @@ def main() -> int:
                    help="also write the result into each node's `size`, so the graph looks the "
                         "same anywhere without recomputing")
     p.add_argument("--top", type=int, default=10, help="how many nodes to list")
+
+    p = with_graph(sub.add_parser("note", help="write the long form of a description, as a "
+                                                 "markdown file in the graph's docs/"))
+    p.add_argument("--node", help="the node this note is about (omit for the subject's "
+                                  "overview note)")
+    p.add_argument("--file", help="file name inside docs/ (default: the node's slug, or "
+                                  "overview.md)")
+    p.add_argument("--title", help="the note's heading")
+    p.add_argument("--text", default="", help="write this instead of the skeleton")
+    p.add_argument("--list", action="store_true", help="list the notes and what points at them")
+
+    p = with_graph(sub.add_parser("review", help="the work list for a field survey: which bodies "
+                                                 "need a description, and which have gone stale"))
+    p.add_argument("--top", type=int, default=20, help="how many rows to list")
+
+    p = with_graph(sub.add_parser("visuals", help="how this graph wants to look: arrows, width, "
+                                                  "scale, rings"))
+    p.add_argument("--arrows", choices=["on", "off"],
+                   help="does a directed relation get a head by default? The app's default is "
+                        "off; a citation map usually wants it on")
+    p.add_argument("--halo", choices=["on", "off"],
+                   help="draw a ring around a node that has nodes collapsed inside it")
+    p.add_argument("--edge-width", dest="edge_width", type=float,
+                   help="multiply every relation's width")
+    p.add_argument("--node-scale", dest="node_scale", type=float)
+    p.add_argument("--show", action="store_true", help="print what is recorded, then any change")
+
+    p = with_graph(sub.add_parser("capacity", help="record the node budget this graph was "
+                                                   "measured at (the viewer measures the host)"))
+    p.add_argument("--nodes", type=int, help="how many nodes were held")
+    p.add_argument("--note", default="", help="what was measured, and on what")
 
     p = with_graph(sub.add_parser("set-meta", help="set a top-level meta field"))
     p.add_argument("--key", required=True); p.add_argument("--value", required=True)
@@ -1187,21 +1353,7 @@ def main() -> int:
     p.add_argument("--app", help="template to use (default: viewer.html)")
     p.add_argument("--out", help="where to write it (default: next to the graph)")
 
-    p = sub.add_parser("shot")
-    p.add_argument("--html", required=True); p.add_argument("--out", default="graph.png")
-    p.add_argument("--width", type=int, default=1600)
-    p.add_argument("--height", type=int, default=1000)
-
     p = sub.add_parser("open"); p.add_argument("--html", required=True)
-
-    p = with_graph(sub.add_parser("serve", help="serve the graph, re-rendering on "
-                                                "every change"))
-    p.add_argument("--app", help="template to use (default: viewer.html)")
-    p.add_argument("--out", help="what to serve (default: next to the graph)")
-    p.add_argument("--port", type=int, default=8300,
-                   help="port to listen on (default 8300); serve does not walk to another "
-                        "port — if it is taken it says who holds it and exits")
-    p.add_argument("--title", default=None)
 
     a = ap.parse_args()
 
@@ -1421,9 +1573,25 @@ def main() -> int:
                 return 2
             if a.power is not None:
                 extra["power"] = a.power
+            if a.style is not None:
+                style = a.style.strip().lower()
+                weird = [w for w in style.replace(",", " ").split() if w not in EDGE_WORDS]
+                if weird:
+                    print(f"error: unknown style word(s) {weird} — known: "
+                          f"{', '.join(EDGE_WORDS)}", file=sys.stderr)
+                    return 2
+                # An empty style means "no style", which is a real instruction: take the word
+                # off the edge rather than storing the empty string.
+                extra["style"] = style
+            for flag, key in ((a.color, "color"), (a.dash, "dash"),
+                              (a.width, "width"), (a.label, "label")):
+                if flag is not None:
+                    extra[key] = flag
+            if a.dir is not None and a.dir != "none":
+                extra["dir"] = a.dir
             if not extra:
-                print("error: nothing to set — pass --power and/or --set KEY=VALUE",
-                      file=sys.stderr)
+                print("error: nothing to set — pass --power, --style, --color, --dash, --width, "
+                      "--label, --dir and/or --set KEY=VALUE", file=sys.stderr)
                 return 2
             hits = [e for e in g["edges"] if e.get("from") == a.src and e.get("to") == a.dst]
             if not hits:
@@ -1490,13 +1658,29 @@ def main() -> int:
             if bad:
                 print(f"error: --set wants KEY=VALUE, got: {', '.join(bad)}", file=sys.stderr)
                 return 2
+            # A body without a description is a dot with a name. Publications are exempt — they
+            # carry their own identity in a title and a DOI — and so is anything the app has
+            # never heard of. The four kinds below are the ones a reader is meant to *read*.
+            desc = (a.desc or "").strip() or str(extra.get("desc") or "").strip()
+            if a.kind in NEEDS_DESC and not desc:
+                print(f"error: a {a.kind} needs a description — one sentence saying what it is "
+                      f"and why it matters for this subject.\n"
+                      f"       --desc \"...\"  (the long form goes in a note: kg.py note "
+                      f"--graph <id> --node {a.id})", file=sys.stderr)
+                return 2
             n = {"id": a.id, "label": a.label, "kind": a.kind,
-                 "style": a.style, "desc": a.desc, "link": a.link, **extra}
+                 "style": a.style, "desc": desc, "link": a.link, **extra}
             if a.size is not None: n["size"] = a.size
             if a.level is not None: n["level"] = a.level
             if a.color: n["color"] = a.color
+            if desc:
+                # What the description was written against. When the graph grows around this
+                # node, `review` can say which sentences have not been re-read since.
+                n["desc_rev"] = 0
             g["nodes"].append(n); save(g, path)
             print(f"added node {a.id} ({a.kind}) -> {len(g['nodes'])} nodes")
+            if desc:
+                print(f"          described: \"{desc[:70]}{'…' if len(desc) > 70 else ''}\"")
             if extra:
                 print(f"          with {', '.join(sorted(extra))} — its own row in the panel")
             return 0
@@ -1511,6 +1695,14 @@ def main() -> int:
             if bad:
                 print(f"error: --set wants KEY=VALUE, got: {', '.join(bad)}", file=sys.stderr)
                 return 2
+            style = (a.style or "").strip().lower()
+            weird = [w for w in style.replace(",", " ").split() if w not in EDGE_WORDS]
+            if weird:
+                print(f"error: unknown style word(s) {weird} — the renderer knows: "
+                      f"{', '.join(EDGE_WORDS)}.\n"
+                      f"       A word it does not know is ignored, which is a silent loss of "
+                      f"meaning, so this is refused rather than stored.", file=sys.stderr)
+                return 2
             e = {"from": a.src, "to": a.dst, **extra}
             # Only what was meant: an empty label or an absent direction is not a property, and
             # a document full of defaults nobody chose is a document nobody can read.
@@ -1520,13 +1712,29 @@ def main() -> int:
                 e["dir"] = a.dir
             if a.time:
                 e["time"] = a.time
+            if style:
+                e["style"] = style
+            if a.color:
+                e["color"] = a.color
+            if a.dash:
+                e["dash"] = a.dash
+            if a.width is not None:
+                e["width"] = a.width
             # Written explicitly, and only when it is not the default: an edge of power 1 in the
             # document says nothing.
             if a.power != 1:
                 e["power"] = a.power
             g["edges"].append(e)
             save(g, path)
-            print(f"added edge {a.src} -> {a.dst} -> {len(g['edges'])} edges"); return 0
+            looks = f" [{style}]" if style else ""
+            print(f"added edge {a.src} -> {a.dst}{looks} -> {len(g['edges'])} edges")
+            # A co-citation drawn as structure is the mistake that made the loudest thing on the
+            # map the weakest relation. Say it at the moment it is written, not a week later.
+            if "co-cit" in (a.label or "").lower() and a.power > 0.1:
+                print(f"          note: this is labelled a co-citation at power {a.power} — "
+                      f"co-citation is texture: --power 0.05 --style dashed, count in "
+                      f"--set cocited=N")
+            return 0
         if a.cmd == "remove-node":
             targets = set(a.id)
             present = {n["id"] for n in g["nodes"]}
@@ -1633,10 +1841,27 @@ def main() -> int:
             if bad:
                 print(f"error: --set wants KEY=VALUE, got: {', '.join(bad)}", file=sys.stderr)
                 return 2
+            if a.desc is not None:
+                extra["desc"] = a.desc
+            if not extra:
+                print("error: nothing to set — pass --set KEY=VALUE and/or --desc \"...\"",
+                      file=sys.stderr)
+                return 2
+            deg = {}
+            for e in g["edges"]:
+                deg[e.get("from")] = deg.get(e.get("from"), 0) + 1
+                deg[e.get("to")] = deg.get(e.get("to"), 0) + 1
             for n in g["nodes"]:
                 if n["id"] == a.id:
+                    # A description is written *about* something at a moment: keeping the number
+                    # of connections it was written against is what lets `review` say later which
+                    # sentences have not been re-read since the graph grew around them.
+                    if "desc" in extra:
+                        n["desc_rev"] = deg.get(n["id"], 0)
                     n.update(extra)
-                    save(g, path); print(f"updated {a.id}: {a.set}")
+                    save(g, path)
+                    shown = ", ".join(f"{k}={str(v)[:40]}" for k, v in extra.items())
+                    print(f"updated {a.id}: {shown}")
                     return 0
             print(f"error: no node '{a.id}'", file=sys.stderr); return 2
         if a.cmd == "info":
@@ -1679,7 +1904,7 @@ def main() -> int:
                     print(f"  error   {e}")
             print()
             print("next      python3 scripts/kg.py render --graph " f"{path}")
-            print(f"          python3 scripts/kg.py serve  --graph {path}")
+            print(f"          python3 scripts/kg.py open   --html <the page it printed>")
             return 1 if r["errors"] else 0
 
         if a.cmd == "stats":
@@ -1705,41 +1930,157 @@ def main() -> int:
                       f"meta.colors for control")
             return 0
 
+    if a.cmd == "note":
+        path = resolve_graph(a.graph)
+        g = load(path)
+        d = docs_dir_for(path)
+        if a.list:
+            docs = collect_docs(path)
+            if not docs:
+                print(f"no notes yet — {d} does not exist, or holds no .md files")
+            else:
+                print(f"{len(docs)} note(s) in {d}:")
+                pointed = {str(n.get("doc") or n.get("md") or "") for n in g["nodes"]}
+                for k in docs:
+                    mark = "-> a node" if k in pointed else "  (unlinked)"
+                    print(f"  {k:<34} {len(docs[k]):>6} chars  {mark}")
+            return 0
+        name = (a.file or "").strip()
+        title = (a.title or "").strip()
+        if a.node:
+            n = next((x for x in g["nodes"] if x["id"] == a.node), None)
+            if n is None:
+                print(f"error: no node '{a.node}' in this graph", file=sys.stderr)
+                return 2
+            name = name or f"{slug(n.get('label') or a.node)}.md"
+            title = title or str(n.get("label") or a.node)
+        else:
+            name = name or DOCS_OVERVIEW
+            title = title or f"{(g.get('meta') or {}).get('title') or 'this graph'} — notes"
+        if not name.endswith(".md"):
+            name += ".md"
+        d.mkdir(parents=True, exist_ok=True)
+        f = d / name
+        existed = f.exists()
+        if not existed:
+            body = a.text if a.text else (
+                f"# {title}\n\n"
+                f"<!-- What this is, why it matters to the subject, and where the claim comes "
+                f"from.\n     A note is read by the reader *and* by the next agent: write both "
+                f"audiences. -->\n\n"
+                f"## What it is\n\n\n## Why it matters here\n\n\n## Sources\n\n")
+            f.write_text(body)
+        if a.node:
+            for x in g["nodes"]:
+                if x["id"] == a.node:
+                    x["doc"] = f"{DOCS_DIRNAME}/{name}"
+            save(g, path)
+        rel = f"{DOCS_DIRNAME}/{name}"
+        print(f"{'updated' if existed else 'created'} {rel}"
+              + (f" and pointed {a.node} at it" if a.node else ""))
+        print(f"  {f}")
+        print("  render to put it in the page: it travels inlined, so the page stays one file")
+        return 0
+
+    if a.cmd == "review":
+        path = resolve_graph(a.graph)
+        g = load(path)
+        # The work list for keeping a field survey honest: what each body says, how connected it
+        # is now, and whether its sentence predates the connections around it.
+        deg = {}
+        for e in g["edges"]:
+            deg[e.get("from")] = deg.get(e.get("from"), 0) + 1
+            deg[e.get("to")] = deg.get(e.get("to"), 0) + 1
+        bodies = [n for n in g["nodes"] if n.get("kind") in NEEDS_DESC]
+        notes = collect_docs(path)
+        missing, stale, fresh = [], [], []
+        for n in bodies:
+            nid = n.get("id")
+            desc = (n.get("desc") or "").strip()
+            rev = n.get("desc_rev")
+            row = (nid, n.get("kind"), deg.get(nid, 0), len(desc), n.get("doc") or "")
+            if not desc:
+                missing.append(row)
+            elif isinstance(rev, int) and deg.get(nid, 0) > rev:
+                stale.append(row + (rev,))
+            else:
+                fresh.append(row)
+        print(f"{len(bodies)} body/bodies that must carry a description, in "
+              f"{(g.get('meta') or {}).get('title') or 'this graph'}:")
+        print(f"  {len(fresh):>3} described and current")
+        print(f"  {len(stale):>3} described before the graph grew around them  (re-read these)")
+        print(f"  {len(missing):>3} with no description at all")
+        for label, rows in (("stale", stale), ("missing", missing)):
+            for row in rows[:max(0, a.top)]:
+                nid, kind, d, n, doc = row[:5]
+                extra = f" written at degree {row[5]}" if len(row) > 5 else ""
+                print(f"    - {nid} ({kind}) degree {d}{extra}"
+                      + (f" note: {doc}" if doc else " — no note either"))
+        unlinked = [k for k in notes if k not in {str(x.get("doc") or "") for x in g["nodes"]}]
+        if unlinked:
+            print(f"  {len(unlinked)} note(s) no node points at: {', '.join(unlinked[:4])}")
+        if missing or stale:
+            print("\nto write or rewrite one:  python3 scripts/kg.py set-node --graph <id> "
+                  "--id <node> --desc \"...\"")
+            print("the long form:            python3 scripts/kg.py note --graph <id> "
+                  "--node <node>")
+        return 0
+
+    if a.cmd == "visuals":
+        path = resolve_graph(a.graph)
+        g = load(path)
+        vis = g["meta"].setdefault("visuals", {})
+        wanted = any(x is not None for x in (a.arrows, a.edge_width, a.node_scale, a.halo))
+        if not wanted or a.show:
+            if not vis:
+                print("nothing decided for this graph — the app's defaults are in force")
+            for k, v in sorted(vis.items()):
+                print(f"  {k} = {v}")
+            if not wanted:
+                return 0
+        if a.arrows is not None:
+            vis["arrows"] = a.arrows == "on"
+        if a.halo is not None:
+            vis["halo"] = a.halo == "on"
+        if a.edge_width is not None:
+            vis["edge_width"] = a.edge_width
+        if a.node_scale is not None:
+            vis["node_scale"] = a.node_scale
+        save(g, path)
+        print("visuals recorded:",
+              ", ".join(f"{k}={v}" for k, v in sorted(vis.items())))
+        return 0
+
+    if a.cmd == "capacity":
+        path = resolve_graph(a.graph)
+        g = load(path)
+        vis = g["meta"].setdefault("visuals", {})
+        if a.nodes is None:
+            n = vis.get("max_nodes")
+            print(f"recorded budget: {n} nodes" if n else
+                  "no budget recorded — the viewer measures the host it runs on")
+            if vis.get("max_nodes_note"):
+                print(f"  {vis['max_nodes_note']}")
+            return 0
+        vis["max_nodes"] = a.nodes
+        if a.note:
+            vis["max_nodes_note"] = a.note
+        save(g, path)
+        print(f"recorded {a.nodes} nodes as this graph's budget"
+              f"{' — ' + a.note if a.note else ''}")
+        print("  the viewer measures the *host*, not the file: this is the fallback for a "
+              "machine that cannot measure itself")
+        return 0
+
     if a.cmd == "render":
         path = resolve_graph(a.graph)
         g = load(path)
-        out = render(g, Path(a.out) if a.out else default_out(path), a.app)
+        out = render(g, Path(a.out) if a.out else default_out(path), a.app, path)
         print(f"rendered {len(g['nodes'])} nodes / {len(g['edges'])} edges -> {out}")
+        notes = len(collect_docs(path))
+        if notes:
+            print(f"  with {notes} note(s) from {DOCS_DIRNAME}/ — they travel in the page")
         print(f"  {file_url(out)}")
-        return 0
-
-    if a.cmd == "shot":
-        chrome = find_chrome()
-        if not chrome:
-            print("error: no Chrome/Chromium found for headless screenshot", file=sys.stderr)
-            return 3
-        html = Path(a.html).resolve()
-        out = Path(a.out).resolve()
-        # Software WebGL, named explicitly. Headless Chrome will not give a page a GPU
-        # context, and the `--disable-gpu` that used to be here made sigma throw inside its
-        # constructor: every screenshot came out a flat dark rectangle, which reads as "the
-        # graph is broken" when it is the screenshot that is broken.
-        cmd = [chrome, "--headless=new", "--hide-scrollbars",
-               "--force-device-scale-factor=1",
-               "--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader",
-               "--virtual-time-budget=8000",
-               f"--window-size={a.width},{a.height}",
-               f"--screenshot={out}", f"file://{html}"]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        if not out.exists():
-            print(f"error: screenshot failed\n{r.stderr[:400]}", file=sys.stderr); return 3
-        size = out.stat().st_size
-        print(f"screenshot {out} ({size // 1024} KB)")
-        # A blank page of this size compresses to a few KB. Saying so is the difference
-        # between an agent checking its own work and an agent reporting an empty graph.
-        if size < 12_000 and a.width * a.height >= 200_000:
-            print("  warning: that is small enough to be a flat page — the renderer probably "
-                  "did not start rather than the graph being empty", file=sys.stderr)
         return 0
 
     if a.cmd == "open":
@@ -1760,133 +2101,6 @@ def main() -> int:
             subprocess.run(["start", str(p)], shell=True, check=False)
         return 0
 
-    if a.cmd == "serve":
-        # Serve the graph AND its JSON, re-rendering on every request so that a
-        # re-run of the build commands is visible on browser refresh.
-        import http.server
-        import socketserver
-
-        graph = resolve_graph(a.graph).resolve()
-        out = (Path(a.out) if a.out else default_out(graph)).resolve()
-        if not graph.exists():
-            print(f"error: no such graph: {graph}", file=sys.stderr)
-            print("  create one first:  kg.py new --out <path> --title \"...\"", file=sys.stderr)
-            return 2
-        out.parent.mkdir(parents=True, exist_ok=True)
-        title = a.title
-        last = {"mtime": None}
-
-        class Handler(http.server.SimpleHTTPRequestHandler):
-            def __init__(self, *args, **kw):
-                super().__init__(*args, directory=str(out.parent), **kw)
-
-            def log_message(self, fmt, *args):  # keep the console readable
-                sys.stderr.write("  %s\n" % (fmt % args))
-
-            def end_headers(self):
-                # Without this the browser can serve a cached page and the user reports
-                # "it doesn't work" while the server is fine. There is no reason to cache
-                # a page whose whole purpose is to re-render on refresh.
-                self.send_header("Cache-Control", "no-store, must-revalidate")
-                self.send_header("Pragma", "no-cache")
-                super().end_headers()
-
-            def _fresh(self) -> bool:
-                try:
-                    m = graph.stat().st_mtime
-                except FileNotFoundError:
-                    return False
-                if last["mtime"] is None or m != last["mtime"]:
-                    last["mtime"] = m
-                    g = load(graph)
-                    if title:
-                        g.setdefault("meta", {})["title"] = title
-                    render(g, out, a.app)
-                    return True
-                return False
-
-            def do_GET(self):
-                self._fresh()
-                super().do_GET()
-
-            def do_HEAD(self):
-                self._fresh()
-                super().do_HEAD()
-
-        # render once so the first visit is not empty
-        g = load(graph)
-        if title:
-            g.setdefault("meta", {})["title"] = title
-        render(g, out, a.app)
-
-        # Bind. Be honest about WHY it failed: a sandbox that blocks bind() makes every
-        # port fail, and calling that "port busy" sends the agent hunting for a free port
-        # forever. Observed: codex tried 8300-8319, 8350-8369, 8400-8419 and 12345-12364
-        # while nothing was listening on any of them.
-        class Server(socketserver.ThreadingTCPServer):
-            allow_reuse_address = True
-            daemon_threads = True
-
-        # Bind exactly the port asked for, and refuse rather than walking forward. Walking is
-        # how two servers end up alive while the URL in the user's chat points at the first
-        # one, and how "the server is temperamental" gets said about a tool that was fine. A
-        # URL handed to a human has to keep meaning what it meant when it was handed over.
-        port = a.port
-        httpd = None
-        first_err = None
-        try:
-            httpd = Server(("127.0.0.1", port), Handler)
-        except OSError as e:
-            first_err = e
-
-        if httpd is None:
-            # Careful with errno: 48 is EADDRINUSE on macOS but EADDRNOTAVAIL on Linux. The
-            # old code listed 48 as a permission failure, so a busy port on a Mac was reported
-            # as a sandbox restriction and the agent went hunting for ports.
-            err = getattr(first_err, "errno", None)
-            busy = err == 98 or (err == 48 and sys.platform == "darwin")
-            print(f"error: could not listen on {port}: {first_err}", file=sys.stderr)
-            print("", file=sys.stderr)
-            if busy:
-                holder = ""
-                try:
-                    r = subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
-                                       capture_output=True, text=True, timeout=5)
-                    rows = [ln.split() for ln in r.stdout.strip().splitlines()[1:] if ln.strip()]
-                    if rows:
-                        holder = f" — {rows[0][0]}, pid {rows[0][1]}"
-                except Exception:
-                    pass
-                print(f"  Port {port} is already in use{holder}. Something is probably serving",
-                      file=sys.stderr)
-                print("  this graph already. Probe it before starting a second server:",
-                      file=sys.stderr)
-                print(f"    http://localhost:{port}/{out.name}", file=sys.stderr)
-                print(f"  Or ask for a different port:  --port {port + 1}", file=sys.stderr)
-            elif err in (1, 13, 49):
-                print("  This is a PERMISSION failure, not a busy port. A sandbox that", file=sys.stderr)
-                print("  forbids binding sockets fails every port the same way — moving to", file=sys.stderr)
-                print("  another port will not help. Serve it from a terminal outside the", file=sys.stderr)
-                print("  sandbox, or hand over the page instead:", file=sys.stderr)
-            else:
-                print("  Not a busy port and not a permission failure — read the errno above.", file=sys.stderr)
-            print(f"    python3 scripts/kg.py render --graph {graph} --out {out}", file=sys.stderr)
-            print(f"    python3 scripts/kg.py open   --html {out}", file=sys.stderr)
-            return 2
-
-        url = f"http://localhost:{port}/{out.name}"
-        print(f"serving {out.parent}")
-        print(f"re-rendering from {graph.name} on every change — refresh to see it")
-        print()
-        print(f"    {url}")
-        print()
-        print("Ctrl-C to stop")
-        try:
-            with httpd:
-                httpd.serve_forever()
-        except KeyboardInterrupt:
-            print("\nstopped")
-        return 0
     return 1
 
 

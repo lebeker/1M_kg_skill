@@ -18,6 +18,8 @@ kg.py add-node --graph citation-map --id seed --kind publication --label "Hallma
 kg.py add-node --graph citation-map --id hallmarks-2013 --kind publication \
    --label "The Hallmarks of Aging" --set weight=14.9 --set citations=14920 --set year=2013
 kg.py add-edge --graph citation-map --from seed --to hallmarks-2013 --label cites --dir in
+# and say the whole graph is read as a citation graph, so directions get heads
+kg.py visuals --graph citation-map --arrows on
 ```
 
 The data comes from OpenAlex either way: `openalex_related --id <W…> --mode references|cited_by`
@@ -78,6 +80,52 @@ Naming the method is not decoration: *"weighted by grants"* and *"weighted by pa
 different claims about a field, and a graph that does not say which one it is cannot be argued
 with. Say which one it is in `weigh --metric`, and put the reasoning in `--note` when the choice
 is not obvious.
+
+## 4. The survey — the graph, and the writing that goes with it
+
+A map of a field is the *middle* of the work. What comes out the other end is text: an overview,
+a review section, a memo. So the notes live beside the document and travel in the page.
+
+```bash
+# bodies must say what they are, from the moment they exist
+kg.py add-node --graph longevity-map --id inflammaging --kind concept --label "Chronic inflammation" \
+   --desc "The chronic, low-grade immune activity that rises with age; implicated in most age-related disease."
+# the long form, when a sentence is not enough — one file per node, in the graph's own docs/
+kg.py note --graph longevity-map --node inflammaging --title "Inflammaging"
+kg.py note --graph longevity-map          # the subject's own note: the draft of the overview
+kg.py render --graph longevity-map        # notes travel inlined; one file, no server, no fetch
+
+# what the survey is missing, and what it has grown past
+kg.py review --graph longevity-map
+kg.py validate --graph longevity-map
+```
+
+`review` is the honest part: it lists the bodies with no description, and the ones whose
+sentence was written when the node had *fewer connections than it has now* — the places where
+the field moved after the text was written. Rewrite one with
+`set-node --id <node> --desc "…"` (which re-dates it), or the long form in the note.
+
+An overview written this way is not a second artifact to maintain: every claim in it can point
+at a node, and every node's note says where its claim came from.
+
+## 5. Ten thousand articles
+
+The graph format does not care how many nodes there are — nodes and edges are arrays. What
+decides whether 10k is possible is the **provider** (see `references/providers.md`) and the
+**host**. Two habits make it work:
+
+```bash
+# 1. count before you search: most providers meter or rate-limit the expensive call
+openalex_count --filter "default.search:longevity,publication_year:2015-2026"
+# 2. record where each node came from, so the pull can be audited and redone
+kg.py add-node --graph field --id W123 --kind publication --label "…" --set found_by="openalex: search 'longevity' 2026-10-16"
+```
+
+Then open it. The viewer measures the machine it is on (~3 seconds, with a progress screen),
+draws what that host can hold, collapses the smallest clusters around each concept, rings the
+nodes that have something hidden inside them, and says in a banner how many nodes are collapsed
+with a button to expand anyway. Nothing is deleted and nothing is refused; the graph that was
+too big to draw is still the graph that was built.
 
 ## What none of the three needs
 
