@@ -167,7 +167,7 @@ itself — `meta.app` — with `--app <name>` overriding it for one run:
 
 ```json
 { "meta": { "schema": "kg/1", "app": "viewer",
-            "app_url": "https://…/viewer-v0.0.8/viewer.html",
+            "app_url": "https://…/viewer-v0.0.9/viewer.html",
             "requires": { "skills": ["kg"], "plugins": [], "tools": ["openalex"] } } }
 ```
 

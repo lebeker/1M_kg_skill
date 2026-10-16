@@ -124,8 +124,22 @@ viewer is free to read them that way. The viewer that ships with this skill uses
   partner company (3) is touched. Nothing at or above the level you started from is hidden.
 - What is hidden stays readable as **counted lines from the node you collapsed** — two of a
   company's papers about model organisms give it one line to model organisms at power 2.
+- A node the visible map still **holds** is not hidden: a paper shared with another lab, a
+  researcher who also works elsewhere. Without that, a collapse walks out through shared work and
+  takes the whole field with it.
 - Those lines are the **view's own**: they exist in the page, never in `kg.json`. A document that
   never mentioned them is still the document, and `validate` never sees them.
+
+Which relations a collapse may cross is the graph's to decide:
+
+```bash
+python3 scripts/kg.py visuals --graph my-map --hierarchy "works at,authored"
+```
+
+With a hierarchy declared, only those relations are crossed — a citation into a company's paper
+is a fact about the field, not a membership. With none declared, any relation may be crossed. In
+both cases the two limits above hold: nothing at or above the level you started from, and nothing
+the visible map still holds.
 
 Because it is the same axis the document already declares, a graph can change what collapse does
 by declaring different multipliers — no code, no setting.

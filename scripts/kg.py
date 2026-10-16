@@ -1306,6 +1306,11 @@ def main() -> int:
     p.add_argument("--edge-width", dest="edge_width", type=float,
                    help="multiply every relation's width")
     p.add_argument("--node-scale", dest="node_scale", type=float)
+    p.add_argument("--hierarchy",
+                   help="the relations that mean *belongs to*, comma-separated (i.e. "
+                        "\"works at,authored\"). A collapse follows only these when they are "
+                        "declared; with none declared it may cross any relation, and anything the "
+                        "visible map still holds is left alone either way")
     p.add_argument("--show", action="store_true", help="print what is recorded, then any change")
 
     p = with_graph(sub.add_parser("capacity", help="record the node budget this graph was "
@@ -2048,7 +2053,8 @@ def main() -> int:
         path = resolve_graph(a.graph)
         g = load(path)
         vis = g["meta"].setdefault("visuals", {})
-        wanted = any(x is not None for x in (a.arrows, a.edge_width, a.node_scale, a.halo))
+        wanted = any(x is not None for x in (a.arrows, a.edge_width, a.node_scale, a.halo,
+                                            a.hierarchy))
         if not wanted or a.show:
             if not vis:
                 print("nothing decided for this graph — the app's defaults are in force")
@@ -2064,6 +2070,12 @@ def main() -> int:
             vis["edge_width"] = a.edge_width
         if a.node_scale is not None:
             vis["node_scale"] = a.node_scale
+        if a.hierarchy is not None:
+            rels = [r.strip() for r in a.hierarchy.split(",") if r.strip()]
+            if rels:
+                vis["hierarchy"] = rels
+            else:
+                vis.pop("hierarchy", None)
         save(g, path)
         print("visuals recorded:",
               ", ".join(f"{k}={v}" for k, v in sorted(vis.items())))
