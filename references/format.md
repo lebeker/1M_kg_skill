@@ -228,6 +228,21 @@ which is the difference between "the viewer draws arrows" and "this graph draws 
 | `node_scale` | multiply every node's radius |
 | `halo` | draw a ring around a node that has nodes collapsed inside it (default on) |
 | `max_nodes` | the node budget this graph was *measured* at (`capacity --nodes 4000 --note "…"`). A fallback, not a rule: the viewer measures the host it is running on |
+| `mute` | relation words to draw **without** (`visuals --mute "co-cited"`). The viewer reads the same list into its legend, where a reader switches them on and off; a collapse does not walk a muted relation either |
+| `hierarchy` | the relation words that mean *belongs to* (`visuals --hierarchy "works at,authored"`), which is what a collapse is allowed to cross |
+
+**A relation's words are its type, and a measured number is a property.** `co-cited in 66 works`
+is not a relation type, it is one relation word wearing a number: nineteen such edges are nineteen
+types, so no reader (and no legend) can switch co-citation off as a kind. Write the type as the
+label and the count as a property:
+
+```bash
+python3 scripts/kg.py add-edge --graph my-map --from p1 --to p2 --label "co-cited" \
+  --power 0.05 --set cocitations=66
+```
+
+`power` is the emphasis (0.05 = texture, drawn as a hairline); `cocitations` is the measurement,
+which the panel prints as its own row. `validate` warns when a muted word matches no relation.
 
 ## Notes: the long form of a description
 
