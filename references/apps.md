@@ -42,7 +42,7 @@ answering it must not need the network.
       "purpose": "one line a human can read",
       "keywords": ["research", "field", "longevity", "…"],
       "repo": "https://github.com/<owner>/<repo>",
-      "url": "…/viewer-v0.0.23/viewer.html",
+      "url": "…/viewer-v0.0.24/viewer.html",
       "manifest_url": "…/main/app.json",
       "requires": { "skills": ["kg"], "plugins": [], "tools": ["openalex"] },
       "recommends": { "tools": ["a web-search tool"] },
