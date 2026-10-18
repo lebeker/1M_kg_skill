@@ -66,7 +66,7 @@ The shape it writes is the whole format, and it is small:
     "title": "Telomere attrition — mini example",
     "schema": "kg/1",
     "app": "viewer",
-    "app_url": "https://…/viewer-v0.0.14/viewer.html",
+    "app_url": "https://…/viewer-v0.0.15/viewer.html",
     "requires": { "skills": ["kg"], "plugins": [], "tools": ["openalex"] }
   },
   "nodes": [
