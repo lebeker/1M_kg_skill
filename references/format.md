@@ -115,41 +115,45 @@ everywhere carries the numbers itself.
 
 ### One kind axis, and what a viewer may do with it
 
-The multipliers are not only a drawing rule: they are the map's own notion of **level**, and a
-viewer is free to read them that way. The viewer that ships with this skill uses them for
-**collapse** — folding a node's part of the map away without deleting anything from the document:
+The multipliers are a drawing rule, and `level` is the map's own notion of **depth**. A viewer
+is free to read `level` that way — the one that ships with this skill uses it for **folding**,
+which is the graph word for "collapse": a node leaves the drawing without anything leaving the
+document.
 
-- It descends from the node you collapsed *down* the multipliers: a company (3) takes its people
-  (1) and their papers (0.1) with it, and neither the concepts those papers are about (10) nor a
-  partner company (3) is touched. Nothing at or above the level you started from is hidden.
-- What is hidden stays readable as **counted lines from the node you collapsed** — two of a
-  company's papers about model organisms give it one line to model organisms at power 2.
-- Those lines are the **view's own**: they exist in the page, never in `kg.json`. A document that
-  never mentioned them is still the document, and `validate` never sees them.
+**The axis is `level`, not weight.** A node's *children* are its neighbours at a **deeper** level.
+On a longevity map built this way: the root sits at 1, concepts at 2, papers at 2.5, people at 3,
+institutions and companies at 4. Weight says how big a node is drawn; it says nothing about who
+contains whom, and folding on it was a mistake.
 
-Which relations a collapse may cross is the graph's to decide:
+**Two shapes of fold, decided by the node, not by a mode switch:**
 
-```bash
-python3 scripts/kg.py visuals --graph my-map --hierarchy "works at,authored"
-```
+| the node has | what folding does |
+|---|---|
+| neighbours above it (a paper under a concept, a scientist under a paper, an institution under a person) | the node goes. Its weight — *and everything it had already absorbed* — is split evenly between the parents, and anything still hanging below it is re-attached to each parent at the same share |
+| nothing above it (the top of a branch, e.g. a concept whose parent is the root) | the node stays and wears the ring; everything below it is folded into it, leaves first |
 
-With a hierarchy declared, only those relations are crossed — a citation into a company's paper
-is a fact about the field, not a membership. With none declared, any relation may be crossed.
+**Nothing is invented, and no mass is lost.** A scientist shared by two papers is `+0.5
+scientist` in each of their orbits; his two institutions become `institution --0.5--> paper A`
+and `--0.5--> paper B`, because that is where he took them. Two concepts that never touched stay
+untouched: a 0.05 co-citation hairline is a relation between *peers*, and peers are never
+re-attached — mass moves up, never sideways. Counts in the panel can therefore be fractional,
+and that is the point: `0.5 scientist` is the truth of a shared person.
 
-**The walk is strictly downhill, and that is the whole rule.** A step is allowed only from a node
-to a neighbour of a *lower* level than that node: a company takes its people, its people take their
-papers, and a paper has nothing below it, so the walk stops there. Nothing at or above the level
-you started from is ever hidden.
+Every invented line is the view's own, marked `agg` in the page and never in `kg.json`; the
+header counts the document's edges, not the view's. A fold is derived from the document and the
+list of fold decisions alone, so the same decisions always give the same picture.
 
-Getting this wrong is easy in both directions, and both were tried: walking down from the *node
-you started at* rather than from where you are lets the descent climb back up out of a paper into
-every co-author on the map (one company swallowed 48 of 81 nodes); guarding on "is the visible map
-still holding this?" instead left 56 of 59 nodes with a button that did nothing at all. If you
-change this rule, sweep **every** node in a real graph — checking the one node you designed it
-around proves nothing.
+**Walking it wrongly is easy, and every wrong version was tried here.** Walking down from the
+*starting* node rather than from the node you are leaving lets a fold climb back out through
+shared co-authors (one company swallowed 48 of 81 nodes). Comparing levels against the *root*
+instead of the node being left lets one concept's fold walk the whole co-citation hairball
+(71 of 81 nodes). Guarding on "does the visible map still hold this?" left 56 of 59 nodes with
+a button that did nothing. If you change this rule, sweep **every** node in a real graph —
+checking the node you designed it around proves nothing.
 
-Because it is the same axis the document already declares, a graph can change what collapse does
-by declaring different multipliers — no code, no setting.
+The same rule runs the legend's **node eyes**: switching a kind off folds every node of that
+kind, deepest first, so an institution's mass lands on its people and their people's lands on
+their papers. A relation switched off is simply not there to fold along.
 
 ### Adding a property or a kind is a data act, never a code change
 
@@ -229,7 +233,7 @@ which is the difference between "the viewer draws arrows" and "this graph draws 
 | `halo` | draw a ring around a node that has nodes collapsed inside it (default on) |
 | `max_nodes` | the node budget this graph was *measured* at (`capacity --nodes 4000 --note "…"`). A fallback, not a rule: the viewer measures the host it is running on |
 | `mute` | relation words to draw **without** (`visuals --mute "co-cited"`). The viewer reads the same list into its legend, where a reader switches them on and off; a collapse does not walk a muted relation either |
-| `hierarchy` | the relation words that mean *belongs to* (`visuals --hierarchy "works at,authored"`), which is what a collapse is allowed to cross |
+| `hierarchy` | the relation words that mean *belongs to* (`visuals --hierarchy "works at,authored"`). Recorded for a reader that wants a membership axis; **the shipped viewer's fold uses `level` instead** — a relation list cannot say which node contains which, and a level can |
 
 **A relation's words are its type, and a measured number is a property.** `co-cited in 66 works`
 is not a relation type, it is one relation word wearing a number: nineteen such edges are nineteen
