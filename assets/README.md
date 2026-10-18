@@ -19,7 +19,7 @@ The graph says so itself, in `meta.app`:
 
 ```json
 { "meta": { "title": "Longevity", "schema": "kg/1", "app": "viewer",
-            "app_url": "https://…/viewer-v0.0.15/viewer.html" } }
+            "app_url": "https://…/viewer-v0.0.16/viewer.html" } }
 ```
 
 `render` resolves the name in this order: `--app <name>` on the command line, then the
@@ -52,7 +52,7 @@ python3 scripts/kg.py fetch-viewer --url <url-of-the-single-file-viewer>
 The latest published build of the shipped viewer:
 
 ```
-https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/viewer-v0.0.15/viewer.html
+https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/viewer-v0.0.16/viewer.html
 ```
 
 That URL is a tag, so it never changes under you: a fix is published as a new tag
@@ -142,7 +142,7 @@ Whoever puts a template here should say where it came from. Two shapes exist, bo
 { "name": "kg-viewer", "version": "0.0.2", "built_at": "…",
   "origin": "https://github.com/lebeker/1M_kg_sciense-kg_webapp",
   "commit": "e4ca883", "bytes": 1799703,
-  "fetch_url": "https://raw.githubusercontent.com/…/viewer-v0.0.15/viewer.html",
+  "fetch_url": "https://raw.githubusercontent.com/…/viewer-v0.0.16/viewer.html",
   "manifest_url": "https://raw.githubusercontent.com/…/main/app.json" }
 
 { "name": "viewer", "origin": "https://…/viewer.html",

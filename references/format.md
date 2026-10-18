@@ -151,6 +151,11 @@ instead of the node being left lets one concept's fold walk the whole co-citatio
 a button that did nothing. If you change this rule, sweep **every** node in a real graph —
 checking the node you designed it around proves nothing.
 
+**“Only categories” folds the whole map up to its top layer** — every node deeper than the
+shallowest one goes into the layer above it, deepest first, and what is left is the category
+graph. Two categories that share something are joined by a counted line naming what they share
+(`shares institution ×2` = two labs in common, counted once per lab, never once per path).
+
 The same rule runs the legend's **node eyes**: switching a kind off folds every node of that
 kind, deepest first, so an institution's mass lands on its people and their people's lands on
 their papers. A relation switched off is simply not there to fold along.
