@@ -113,52 +113,17 @@ kg.py weigh --graph longevity --metric "grant funding (€m)" --bake
 `--bake` writes the result into each node's `size`, so a graph that has to look the same
 everywhere carries the numbers itself.
 
-### One kind axis, and what a viewer may do with it
+### One kind axis, and what `level` means
 
-The multipliers are a drawing rule, and `level` is the map's own notion of **depth**. A viewer
-is free to read `level` that way — the one that ships with this skill uses it for **folding**,
-which is the graph word for "collapse": a node leaves the drawing without anything leaving the
-document.
+The multipliers are a drawing rule. `level` is the map's own notion of **depth** and nothing
+more: the root at 1, concepts at 2, papers at 2.5, people at 3, institutions and companies at 4.
+It is structure a reader may use; it is not a drawing setting. `weight` says how big a node is
+drawn and says nothing about who contains whom.
 
-**The axis is `level`, not weight.** A node's *children* are its neighbours at a **deeper** level.
-On a longevity map built this way: the root sits at 1, concepts at 2, papers at 2.5, people at 3,
-institutions and companies at 4. Weight says how big a node is drawn; it says nothing about who
-contains whom, and folding on it was a mistake.
-
-**Two shapes of fold, decided by the node, not by a mode switch:**
-
-| the node has | what folding does |
-|---|---|
-| neighbours above it (a paper under a concept, a scientist under a paper, an institution under a person) | the node goes. Its weight — *and everything it had already absorbed* — is split evenly between the parents, and anything still hanging below it is re-attached to each parent at the same share |
-| nothing above it (the top of a branch, e.g. a concept whose parent is the root) | the node stays and wears the ring; everything below it is folded into it, leaves first |
-
-**Nothing is invented, and no mass is lost.** A scientist shared by two papers is `+0.5
-scientist` in each of their orbits; his two institutions become `institution --0.5--> paper A`
-and `--0.5--> paper B`, because that is where he took them. Two concepts that never touched stay
-untouched: a 0.05 co-citation hairline is a relation between *peers*, and peers are never
-re-attached — mass moves up, never sideways. Counts in the panel can therefore be fractional,
-and that is the point: `0.5 scientist` is the truth of a shared person.
-
-Every invented line is the view's own, marked `agg` in the page and never in `kg.json`; the
-header counts the document's edges, not the view's. A fold is derived from the document and the
-list of fold decisions alone, so the same decisions always give the same picture.
-
-**Walking it wrongly is easy, and every wrong version was tried here.** Walking down from the
-*starting* node rather than from the node you are leaving lets a fold climb back out through
-shared co-authors (one company swallowed 48 of 81 nodes). Comparing levels against the *root*
-instead of the node being left lets one concept's fold walk the whole co-citation hairball
-(71 of 81 nodes). Guarding on "does the visible map still hold this?" left 56 of 59 nodes with
-a button that did nothing. If you change this rule, sweep **every** node in a real graph —
-checking the node you designed it around proves nothing.
-
-**“Only categories” folds the whole map up to its top layer** — every node deeper than the
-shallowest one goes into the layer above it, deepest first, and what is left is the category
-graph. Two categories that share something are joined by a counted line naming what they share
-(`shares institution ×2` = two labs in common, counted once per lab, never once per path).
-
-The same rule runs the legend's **node eyes**: switching a kind off folds every node of that
-kind, deepest first, so an institution's mass lands on its people and their people's lands on
-their papers. A relation switched off is simply not there to fold along.
+**Folding is the webapp's job, not the document's.** The document says what exists and how deep
+it sits; the viewer decides what to hide, what to count, and how to draw what is left. Nothing in
+`kg.json` describes a fold, and the engine has no command that folds — a document that carries
+view state is a document that only one viewer can read.
 
 ### Adding a property or a kind is a data act, never a code change
 
@@ -237,7 +202,6 @@ which is the difference between "the viewer draws arrows" and "this graph draws 
 | `node_scale` | multiply every node's radius |
 | `halo` | draw a ring around a node that has nodes collapsed inside it (default on) |
 | `max_nodes` | the node budget this graph was *measured* at (`capacity --nodes 4000 --note "…"`). A fallback, not a rule: the viewer measures the host it is running on |
-| `mute` | relation words to draw **without** (`visuals --mute "co-cited"`). The viewer reads the same list into its legend, where a reader switches them on and off; a collapse does not walk a muted relation either |
 | `hierarchy` | the relation words that mean *belongs to* (`visuals --hierarchy "works at,authored"`). Recorded for a reader that wants a membership axis; **the shipped viewer's fold uses `level` instead** — a relation list cannot say which node contains which, and a level can |
 
 **A relation's words are its type, and a measured number is a property.** `co-cited in 66 works`
@@ -251,7 +215,7 @@ python3 scripts/kg.py add-edge --graph my-map --from p1 --to p2 --label "co-cite
 ```
 
 `power` is the emphasis (0.05 = texture, drawn as a hairline); `cocitations` is the measurement,
-which the panel prints as its own row. `validate` warns when a muted word matches no relation.
+which the panel prints as its own row.
 
 ## Notes: the long form of a description
 

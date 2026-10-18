@@ -1306,10 +1306,6 @@ def main() -> int:
     p.add_argument("--edge-width", dest="edge_width", type=float,
                    help="multiply every relation's width")
     p.add_argument("--node-scale", dest="node_scale", type=float)
-    p.add_argument("--mute",
-                   help="relation words this graph wants drawn without, comma-separated (i.e. "
-                        "\"co-cited\"). A viewer reads the same list into its legend, where a "
-                        "reader may switch them back on. Pass an empty string to mute nothing")
     p.add_argument("--hierarchy",
                    help="the relations that mean *belongs to*, comma-separated (i.e. "
                         "\"works at,authored\"). A collapse follows only these when they are "
@@ -1797,18 +1793,6 @@ def main() -> int:
                        if url else "see assets/README.md")
                 r["warnings"].append(f"meta.app names '{app}' but assets/{app}.html is not "
                                      f"here — render will fail; {how}")
-            # A muted word that no relation carries is a typo the reader would only notice as an
-            # absence: nothing on screen changes, because nothing was ever there to hide.
-            mute = ((g.get("meta") or {}).get("visuals") or {}).get("mute")
-            if isinstance(mute, list) and mute:
-                labels = {e.get("label") or "related" for e in g.get("edges", [])}
-                gone = [w for w in mute if w not in labels]
-                if gone:
-                    r["warnings"].append(
-                        f"meta.visuals.mute names {gone} and no relation carries "
-                        f"{'that word' if len(gone) == 1 else 'those words'} — muting it changes "
-                        f"nothing (the relation words here: "
-                        f"{', '.join(sorted(labels)[:6])})")
             # Findings are aggregated at the source: a 1000-node graph would otherwise
             # emit one line per edge, and a wall of output is indistinguishable from
             # no check at all.
@@ -2070,7 +2054,7 @@ def main() -> int:
         g = load(path)
         vis = g["meta"].setdefault("visuals", {})
         wanted = any(x is not None for x in (a.arrows, a.edge_width, a.node_scale, a.halo,
-                                            a.hierarchy, a.mute))
+                                            a.hierarchy))
         if not wanted or a.show:
             if not vis:
                 print("nothing decided for this graph — the app's defaults are in force")
@@ -2086,12 +2070,6 @@ def main() -> int:
             vis["edge_width"] = a.edge_width
         if a.node_scale is not None:
             vis["node_scale"] = a.node_scale
-        if a.mute is not None:
-            words = [w.strip() for w in a.mute.split(",") if w.strip()]
-            if words:
-                vis["mute"] = words
-            else:
-                vis.pop("mute", None)
         if a.hierarchy is not None:
             rels = [r.strip() for r in a.hierarchy.split(",") if r.strip()]
             if rels:
