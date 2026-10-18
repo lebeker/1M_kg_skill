@@ -202,7 +202,6 @@ which is the difference between "the viewer draws arrows" and "this graph draws 
 | `node_scale` | multiply every node's radius |
 | `halo` | draw a ring around a node that has nodes collapsed inside it (default on) |
 | `max_nodes` | the node budget this graph was *measured* at (`capacity --nodes 4000 --note "…"`). A fallback, not a rule: the viewer measures the host it is running on |
-| `hierarchy` | the relation words that mean *belongs to* (`visuals --hierarchy "works at,authored"`). Recorded for a reader that wants a membership axis; **the shipped viewer's fold uses `level` instead** — a relation list cannot say which node contains which, and a level can |
 
 **A relation's words are its type, and a measured number is a property.** `co-cited in 66 works`
 is not a relation type, it is one relation word wearing a number: nineteen such edges are nineteen
