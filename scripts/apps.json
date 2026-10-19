@@ -19,7 +19,7 @@
         "longevity", "biotech", "cryogenics", "brain", "drug", "clinical", "trial"
       ],
       "repo": "https://github.com/lebeker/1M_kg_sciense-kg_webapp",
-      "url": "https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/viewer-v0.0.26/viewer.html",
+      "url": "https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/viewer-v0.0.27/viewer.html",
       "manifest_url": "https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/main/app.json",
       "requires": {
         "skills": ["kg"],
