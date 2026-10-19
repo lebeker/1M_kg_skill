@@ -12,22 +12,55 @@
       "title": "Research field map",
       "purpose": "Map a research field so it can be looked at: what the field is made of, who works on it, and where the applied work is.",
       "keywords": [
-        "research", "field", "map", "paper", "papers", "literature", "science",
-        "scientific", "researcher", "researchers", "scientist", "scientists",
-        "who works on", "lab", "labs", "university", "institution", "company",
-        "companies", "startup", "graph", "knowledge graph", "literature review",
-        "longevity", "biotech", "cryogenics", "brain", "drug", "clinical", "trial"
+        "research",
+        "field",
+        "map",
+        "paper",
+        "papers",
+        "literature",
+        "science",
+        "scientific",
+        "researcher",
+        "researchers",
+        "scientist",
+        "scientists",
+        "who works on",
+        "lab",
+        "labs",
+        "university",
+        "institution",
+        "company",
+        "companies",
+        "startup",
+        "graph",
+        "knowledge graph",
+        "literature review",
+        "longevity",
+        "biotech",
+        "cryogenics",
+        "brain",
+        "drug",
+        "clinical",
+        "trial"
       ],
       "repo": "https://github.com/lebeker/1M_kg_sciense-kg_webapp",
-      "url": "https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/viewer-v0.0.30/viewer.html",
+      "url": "https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/viewer-v0.0.31/viewer.html",
       "manifest_url": "https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/main/app.json",
       "requires": {
-        "skills": ["kg"],
+        "skills": [
+          "kg"
+        ],
         "plugins": [],
-        "tools": ["openalex"]
+        "tools": [
+          "openalex"
+        ]
       },
       "recommends": {
-        "tools": ["a web-search tool", "crossref", "arxiv"]
+        "tools": [
+          "a web-search tool",
+          "crossref",
+          "arxiv"
+        ]
       },
       "tool_notes": {
         "openalex": "works, authors, institutions and concepts in one place, free and without a key — it carries most of the skeleton",
