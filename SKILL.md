@@ -192,6 +192,8 @@ Two ways to control how a graph looks, and both are data — never a change to t
 | "make that one a different colour" | `set-palette --kind preprint --color "#aabbcc"` | a kind's colour |
 | "I don't want to see arrows" | `visuals --graph X --arrows off` (the default), or `--style arrow` on one edge | whether a directed relation gets a head — the graph decides, not the viewer |
 | "those edges should be blue and dotted" | `add-edge … --style dotted --color "#8fa3c8"`, or `set-edge --from a --to b --style "dashed arrow"` | the relation's appearance: stroke (`solid`/`dashed`/`dotted`), shape (`arrow`/`double`/`clamped`/`rectangle`/`triangle`), colour, dash pattern, width |
+| "arrows should show what cites what", and the same relation is used 2,000 times | `declare --edge cite --dir out --from paper --to paper --color "#3f6fd8"`, then `add-edge … --rel cite` | the relation's direction, its allowed ends and its look are declared once; every edge of that name inherits them, and `validate` refuses an edge with the wrong ends |
+| "undo that" / "what changed?" | `history --graph <id>`, `undo --graph <id> [--steps n]` | every change is committed when git is present (only that graph's folder), so a wrong sweep is one command back |
 | "this graph should read bigger/smaller" | `visuals --graph X --edge-width 1.4 --node-scale 1.2` | global scale for the whole graph |
 | "10k articles, but my laptop dies" | nothing — the viewer measures the host and collapses what it cannot hold; `capacity --nodes N` only records a fallback | how much of a big graph is drawn |
 

@@ -24,6 +24,9 @@ Subcommands:
   require         record what a graph needs: skills, plugins, tools, its app
   remove-node     delete a node and every edge touching it
   remove-edge     delete an edge by its endpoints
+  declare         declare a relation: its direction, the kinds it may join, its look
+  history         what changed in a graph, one line per command that changed it
+  undo            put a graph back to an earlier version
   validate        check conformance to kg/1
   merge           fold another kg/1 graph into this one
   info            what is in this graph — run this first
@@ -229,6 +232,83 @@ def save(g: dict, path: Path) -> None:
     """Write the graph, creating the parent directory if the agent has not."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(g, indent=1))
+    autocommit(path)
+
+
+# ------------------------------------------------------------------ history
+#
+# A graph is a file, and a file that changes without a record of what changed is a file nobody
+# can trust. Every write goes through `save`, so every write can be committed: one commit per
+# command, the command line as the message. Nothing here is required — no git, no history, the
+# engine still works — and nothing leaves the machine.
+
+LAST_CMD = ""
+
+
+def _git(root: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], cwd=str(root), capture_output=True, text=True)
+
+
+def repo_root_for(path: Path) -> Path | None:
+    """The nearest folder above this graph that already is a repository, if any."""
+    for parent in [path.parent, *path.parents]:
+        if (parent / ".git").exists():
+            return parent
+    return None
+
+
+def autocommit(path: Path, note: str | None = None) -> None:
+    """
+    Record one change. Best effort by design: a machine without git, or a workspace the reader
+    asked to leave alone (`KG_NO_GIT=1`), is a normal machine, not an error.
+
+    Only the graph's own folder is staged, so a workspace that happens to sit inside someone's
+    notes repository does not get their unrelated edits swept into a commit.
+    """
+    if os.environ.get("KG_NO_GIT") or not shutil.which("git"):
+        return
+    root = repo_root_for(path)
+    if root is None:
+        root = workspace_root()
+        _git(root, "init", "-q")
+    folder = path.parent
+    try:
+        rel = folder.relative_to(root)
+    except ValueError:
+        return
+    _git(root, "add", "-A", "--", str(rel))
+    if not _git(root, "diff", "--cached", "--quiet", "--", str(rel)).returncode:
+        return  # nothing changed
+    msg = note or LAST_CMD or f"update {path.parent.name}"
+    _git(root, "commit", "-q", "-m", msg, "--", str(rel))
+
+
+def graph_history(path: Path, limit: int = 12) -> list[str]:
+    root = repo_root_for(path)
+    if root is None or not shutil.which("git"):
+        return []
+    rel = path.parent.relative_to(root)
+    out = _git(root, "log", f"-n{limit}", "--format=%h  %ad  %s", "--date=short", "--", str(rel))
+    return [line for line in out.stdout.splitlines() if line.strip()]
+
+
+def graph_undo(path: Path, steps: int = 1) -> tuple[bool, str]:
+    """Put the graph back to how it was `steps` changes ago. The undo is itself a change."""
+    root = repo_root_for(path)
+    if root is None or not shutil.which("git"):
+        return False, "no git repository here (or no git installed) — nothing to undo against"
+    rel = path.parent.relative_to(root)
+    out = _git(root, "log", "--format=%H", "--", str(rel))
+    commits = [line.strip() for line in out.stdout.splitlines() if line.strip()]
+    if len(commits) <= steps:
+        return False, f"only {len(commits)} change(s) recorded for this graph"
+    target = commits[steps]
+    show = _git(root, "show", f"{target}:{rel / 'graph.json'}")
+    if show.returncode != 0:
+        return False, f"could not read that version: {show.stderr.strip().splitlines()[:1]}"
+    path.write_text(show.stdout)
+    autocommit(path, f"undo {steps} change(s) of {path.parent.name}")
+    return True, target[:7]
 
 
 def ensure_ids(g: dict) -> None:
@@ -1134,6 +1214,8 @@ def render(g: dict, out: Path, app: str | None = None, source: Path | None = Non
 # -------------------------------------------------------------------- main
 
 def main() -> int:
+    global LAST_CMD
+    LAST_CMD = "kg " + " ".join(sys.argv[1:4])
     ap = argparse.ArgumentParser(description="create/update/render a knowledge graph")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
@@ -1207,6 +1289,9 @@ def main() -> int:
     p.add_argument("--from", dest="src", required=True)
     p.add_argument("--to", dest="dst", required=True)
     p.add_argument("--label", default="")
+    p.add_argument("--rel",
+                   help="a relation declared with `declare`: the label, its direction, its look, "
+                        "and a check that both ends are of the kinds it may join")
     p.add_argument("--dir", default="none", choices=["none", "in", "out", "both"])
     p.add_argument("--power", type=float, default=1,
                    help="how much this relation weighs, where 1 is a normal relation and 0.05 "
@@ -1341,6 +1426,27 @@ def main() -> int:
     p = with_graph(sub.add_parser("remove-edge", help="delete an edge by its endpoints"))
     p.add_argument("--from", dest="src", required=True)
     p.add_argument("--to", dest="dst", required=True)
+
+    p = with_graph(sub.add_parser("history", help="what changed in this graph, newest first"))
+    p.add_argument("--limit", type=int, default=12)
+
+    p = with_graph(sub.add_parser("undo", help="put this graph back to an earlier version"))
+    p.add_argument("--steps", type=int, default=1,
+                   help="how many recorded changes back (default 1 = the state before the last one)")
+
+    p = with_graph(sub.add_parser(
+        "declare",
+        help="declare a relation: does it point, and which kinds may it join"))
+    p.add_argument("--edge", required=True, help="the relation word, e.g. cite, part-of")
+    p.add_argument("--dir", default="none", choices=["none", "in", "out", "both"])
+    p.add_argument("--from", dest="src_kinds", default="",
+                   help="kinds allowed at the tail, comma-separated (empty = any kind)")
+    p.add_argument("--to", dest="dst_kinds", default="",
+                   help="kinds allowed at the head, comma-separated (empty = any kind)")
+    p.add_argument("--color", help="the colour this relation is drawn in when an edge has none")
+    p.add_argument("--style", help="the stroke this relation is drawn in when an edge has none")
+    p.add_argument("--power", type=float,
+                   help="the power this relation takes when an edge does not set one")
 
     p = with_graph(sub.add_parser("validate", help="check that a graph conforms to kg/1"))
     p.add_argument("--strict", action="store_true", help="treat warnings as errors")
@@ -1565,7 +1671,8 @@ def main() -> int:
         return 0
 
     if a.cmd in ("add-node", "add-edge", "set-node", "set-edge", "set-palette", "weigh", "set-meta", "stats",
-                 "remove-node", "remove-edge", "validate", "merge", "info"):
+                 "remove-node", "remove-edge", "validate", "merge", "info",
+                 "history", "undo", "declare"):
         path = resolve_graph(a.graph); g = load(path)
         if a.cmd == "set-palette":
             g["meta"].setdefault("colors", {})[a.kind] = a.color
@@ -1713,10 +1820,45 @@ def main() -> int:
                       f"       A word it does not know is ignored, which is a silent loss of "
                       f"meaning, so this is refused rather than stored.", file=sys.stderr)
                 return 2
+            rel_name = (a.rel or "").strip()
+            decl = None
+            if rel_name:
+                declared = (g.get("meta") or {}).get("edges") or []
+                decl = next((d for d in declared if d.get("name") == rel_name), None)
+                if decl is None:
+                    print(f"error: no relation is declared as '{rel_name}'.\n"
+                          f"       Declare it first, so its direction and its ends are a "
+                          f"decision and not a guess:\n"
+                          f"       python3 scripts/kg.py declare --graph {a.graph or '<id>'} "
+                          f"--edge {rel_name} --dir out --from paper --to paper",
+                          file=sys.stderr)
+                    return 2
+                kinds = {n["id"]: (n.get("kind") or "") for n in g["nodes"]}
+                got = (kinds.get(a.src, ""), kinds.get(a.dst, ""))
+                want = (decl.get("from") or [], decl.get("to") or [])
+                ok = (not want[0] or got[0] in want[0]) and (not want[1] or got[1] in want[1])
+                if not ok and decl.get("dir") == "in":
+                    got = got[::-1]
+                    ok = (not want[0] or got[0] in want[0]) and (not want[1] or got[1] in want[1])
+                if not ok:
+                    print(f"error: '{rel_name}' joins {want[0] or ['any']} -> {want[1] or ['any']}, "
+                          f"but this edge is {got[0] or '?'} -> {got[1] or '?'}.\n"
+                          f"       A relation with the wrong ends is a different relation: "
+                          f"declare another one, or fix the edge.", file=sys.stderr)
+                    return 2
+                # The relation's look is decided once, in the declaration.
+                if not a.color and decl.get("color"):
+                    a.color = decl["color"]
+                if not style and decl.get("style"):
+                    style = str(decl["style"]).lower()
+                if a.power == 1 and decl.get("power") is not None:
+                    a.power = float(decl["power"])
             e = {"from": a.src, "to": a.dst, **extra}
             # Only what was meant: an empty label or an absent direction is not a property, and
             # a document full of defaults nobody chose is a document nobody can read.
-            if a.label:
+            if rel_name:
+                e["label"] = rel_name
+            elif a.label:
                 e["label"] = a.label
             if a.dir and a.dir != "none":
                 e["dir"] = a.dir
@@ -1777,6 +1919,62 @@ def main() -> int:
             save(g, path)
             print(f"removed edge {a.src} -> {a.dst} -> {len(g['edges'])} edges")
             return 0
+        if a.cmd == "history":
+            rows = graph_history(path, a.limit)
+            if not rows:
+                print("no history: this workspace is not a git repository, or git is not "
+                      "installed. Every change is still saved — there is just nothing to "
+                      "compare against.")
+                return 0
+            print(f"{path.parent.name}: {len(rows)} change(s), newest first")
+            for line in rows:
+                print(f"  {line}")
+            return 0
+
+        if a.cmd == "undo":
+            ok, detail = graph_undo(path, max(1, a.steps))
+            if not ok:
+                print(f"error: {detail}", file=sys.stderr)
+                return 2
+            g = load(path)
+            print(f"restored {path.parent.name} to {detail} — "
+                  f"{len(g['nodes'])} nodes / {len(g['edges'])} edges")
+            print("the undo is itself a change, so `history` shows it and `undo` can undo it")
+            return 0
+
+        if a.cmd == "declare":
+            name = a.edge.strip()
+            if not name:
+                print("error: --edge wants a relation word", file=sys.stderr)
+                return 2
+            meta = g.setdefault("meta", {})
+            declared = meta.setdefault("edges", [])
+            froms = [k.strip() for k in a.src_kinds.split(",") if k.strip()]
+            tos = [k.strip() for k in a.dst_kinds.split(",") if k.strip()]
+            entry = {"name": name, "dir": a.dir}
+            if froms:
+                entry["from"] = froms
+            if tos:
+                entry["to"] = tos
+            for key, val in (("color", a.color), ("style", a.style), ("power", a.power)):
+                if val is not None:
+                    entry[key] = val
+            replaced = False
+            for i, ex in enumerate(declared):
+                if ex.get("name") == name:
+                    declared[i] = entry
+                    replaced = True
+                    break
+            if not replaced:
+                declared.append(entry)
+            save(g, path)
+            ends = f"{','.join(froms) or 'any'} -> {','.join(tos) or 'any'}"
+            print(f"{'updated' if replaced else 'declared'} relation '{name}': dir={a.dir}, "
+                  f"{ends}")
+            print(f"          now `add-edge --rel {name}` checks its ends and takes this "
+                  f"relation's look")
+            return 0
+
         if a.cmd == "validate":
             r = conform(g)
             # The graph names the app that draws it; if that app is not here, `render`
@@ -1788,6 +1986,40 @@ def main() -> int:
                        if url else "see assets/README.md")
                 r["warnings"].append(f"meta.app names '{app}' but assets/{app}.html is not "
                                      f"here — render will fail; {how}")
+            # A declared relation is a promise about both ends. Check the edges that use one:
+            # a `part-of` running into a paper is not a typo the reader can see on screen.
+            decls = (g.get("meta") or {}).get("edges") or []
+            if decls:
+                kinds = {n["id"]: (n.get("kind") or "") for n in g.get("nodes", [])}
+                by_name = {d.get("name"): d for d in decls if d.get("name")}
+                mismatched = []
+                unknown = []
+                for e in g.get("edges", []):
+                    name = e.get("label") or ""
+                    d = by_name.get(name)
+                    if not d:
+                        continue
+                    got = (kinds.get(e.get("from"), ""), kinds.get(e.get("to"), ""))
+                    want = (d.get("from") or [], d.get("to") or [])
+                    ok = (not want[0] or got[0] in want[0]) and (not want[1] or got[1] in want[1])
+                    if not ok and d.get("dir") == "in":
+                        got = got[::-1]
+                        ok = (not want[0] or got[0] in want[0]) and (not want[1] or got[1] in want[1])
+                    if not ok:
+                        mismatched.append(f"{e.get('from')} -> {e.get('to')} ({name}: "
+                                          f"{got[0] or '?'} -> {got[1] or '?'})")
+                for name in by_name:
+                    if not any((e.get("label") or "") == name for e in g.get("edges", [])):
+                        unknown.append(name)
+                if mismatched:
+                    r["errors"].append(
+                        f"{len(mismatched)} edge(s) break the kind contract of their relation: "
+                        + "; ".join(mismatched[:3]) + (" …" if len(mismatched) > 3 else ""))
+                if unknown:
+                    r["warnings"].append(
+                        f"declared relation(s) nothing uses: {', '.join(unknown)} — a declaration "
+                        f"no edge carries is a decision that never applies")
+
             # Findings are aggregated at the source: a 1000-node graph would otherwise
             # emit one line per edge, and a wall of output is indistinguishable from
             # no check at all.

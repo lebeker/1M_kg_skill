@@ -190,6 +190,41 @@ Size and placement are asked for, not applied: `weight` or `size` on the nodes y
 `power` on the relations that matter, `ring` to say centre/middle/periphery. Everything left out
 is filled in from the graph itself, so a document with none of them still reads.
 
+## `meta.edges` — relations that are declared, not repeated
+
+A relation is a decision about *direction* and *ends*, and that decision belongs in the document
+once, not in every edge:
+
+```json
+"meta": { "edges": [
+  { "name": "cite",     "dir": "out",  "from": ["paper"],    "to": ["paper"],    "color": "#3f6fd8", "style": "arrow" },
+  { "name": "part-of",  "dir": "out",  "from": ["concept"],  "to": ["concept"],  "color": "#7c8aa0" },
+  { "name": "field-of", "dir": "out",  "from": ["scientist"],"to": ["concept"],  "color": "#c89b3c", "style": "dotted" }
+] }
+```
+
+- `dir` — `none` (undirected), `out` (the arrow points at `from`), `in`, `both`.
+- `from` / `to` — the kinds allowed at each end. Empty/absent means any kind.
+- `color`, `style`, `power` — the default look. An edge that sets its own keeps it.
+
+An edge inherits them by its `label`, so `add-edge --rel cite` writes one edge with no repeated
+attributes, and changing the declaration changes every `cite` edge at once. `validate` refuses an
+edge that breaks the contract (`cite` running into a concept is an error, not a style choice), and
+the viewer reads the same declarations, so what the engine checks is what the page draws.
+
+## History — every change is a version
+
+If `git` is installed, `save` commits each change with the command that caused it, staging only
+that graph's folder. Nothing leaves the machine; without git the engine works exactly as before.
+
+```
+kg.py history --graph <id> [--limit 12]
+kg.py undo    --graph <id> [--steps 1]
+```
+
+`undo` restores the graph from `steps` changes ago and records the undo as a change of its own, so
+it can itself be undone. `KG_NO_GIT=1` opts a workspace out.
+
 ## `meta.visuals` — how this graph wants to look
 
 Taste is data too, so it lives in the document. The app has defaults; a document overrides them,
