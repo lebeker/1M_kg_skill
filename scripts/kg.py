@@ -1029,6 +1029,30 @@ def score_app(ask: str, app: dict) -> tuple[int, list[str]]:
     return len(hits) * 3 + len(soft), hits + soft
 
 
+def relations_of(facts: dict) -> list[dict]:
+    """
+    The relations an app declares, in the shape `meta.edges` wants. An app's `edges` list is
+    prose for `suggest` *and* the vocabulary a graph is born with: if the app says `cites` points
+    from a paper to a paper, every graph it creates starts knowing that, instead of an agent
+    re-deciding it (differently) on every run.
+    """
+    out = []
+    for e in facts.get("edges") or []:
+        name = e.get("name")
+        if not name:
+            continue
+        entry = {"name": str(name), "dir": str(e.get("dir") or "none")}
+        if e.get("from"):
+            entry["from"] = list(e["from"])
+        if e.get("to"):
+            entry["to"] = list(e["to"])
+        for key in ("color", "style", "power"):
+            if e.get(key) is not None:
+                entry[key] = e[key]
+        out.append(entry)
+    return out
+
+
 def print_app_guide(facts: dict, pad: str = "") -> int:
     """What an app is for, what it needs, and what it builds. Prints the missing pieces and
     returns how many of them there are — a person has to hear about those before anything
@@ -1622,6 +1646,9 @@ def main() -> int:
         # needs is a document that can be handed to someone else. An app fills them in.
         meta["requires"] = {k: list((facts.get("requires") or {}).get(k) or [])
                             for k in ("skills", "plugins", "tools")}
+        rels = relations_of(facts)
+        if rels:
+            meta["edges"] = rels
         meta["colors"] = dict(DEFAULT_COLORS)
         # A graph built to an app's conventions should not trip `stats` on the colours that
         # app asked for, so its kinds are seeded rather than left to a hash.
@@ -1660,6 +1687,11 @@ def main() -> int:
                 g["meta"].setdefault("app_url", url)
         g.setdefault("meta", {}).setdefault(
             "requires", {"skills": [], "plugins": [], "tools": []})
+        if not (g["meta"].get("edges")):
+            facts = app_facts(g["meta"].get("app") or "") if g["meta"].get("app") else {}
+            rels = relations_of(facts)
+            if rels:
+                g["meta"]["edges"] = rels
         if a.out:
             out = Path(a.out)
             gid = None
