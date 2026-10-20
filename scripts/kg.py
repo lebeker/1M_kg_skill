@@ -87,6 +87,10 @@ from html import escape as html_escape
 from pathlib import Path
 
 SCHEMA = "kg/1"
+# Two numbers, and they are a request, not a promise: what a document can afford to have drawn at
+# once. The page decides how to respect them on the host it actually runs on — and a reader (or a
+# measurement) may rewrite them later. Writing a graph never stops because of them.
+DEFAULT_LIMITS = {"nodes": 500, "edges": 5000}
 URL_RE = re.compile(r"https?://[^\s\)\]\"<>]+")
 
 DEFAULT_COLORS = {
@@ -190,7 +194,8 @@ def load(path: Path) -> dict:
                              f"  a graph folder holds graph.json or its one .json file")
         path = doc
     if not path.exists():
-        return {"meta": {"title": path.stem, "schema": SCHEMA, "colors": dict(DEFAULT_COLORS)},
+        return {"meta": {"title": path.stem, "schema": SCHEMA, "colors": dict(DEFAULT_COLORS),
+                          "limits": dict(DEFAULT_LIMITS)},
                 "nodes": [], "edges": []}
     try:
         g = json.loads(path.read_text())
@@ -1393,10 +1398,10 @@ def main() -> int:
     p.add_argument("--node-scale", dest="node_scale", type=float)
     p.add_argument("--show", action="store_true", help="print what is recorded, then any change")
 
-    p = with_graph(sub.add_parser("capacity", help="record the node budget this graph was "
-                                                   "measured at (the viewer measures the host)"))
-    p.add_argument("--nodes", type=int, help="how many nodes were held")
-    p.add_argument("--note", default="", help="what was measured, and on what")
+    p = with_graph(sub.add_parser("limits", help="how much of this graph should be drawn at once "
+                                                  "(two numbers; the page decides how to respect them)"))
+    p.add_argument("--nodes", type=int, help="nodes the page should draw before grouping")
+    p.add_argument("--edges", type=int, help="edges the page should draw before grouping")
 
     p = with_graph(sub.add_parser("set-meta", help="set a top-level meta field"))
     p.add_argument("--key", required=True); p.add_argument("--value", required=True)
@@ -1607,7 +1612,7 @@ def main() -> int:
         facts = app_facts(chosen) if chosen else {}
         app = chosen or default_app()
 
-        meta = {"title": a.title, "schema": SCHEMA}
+        meta = {"title": a.title, "schema": SCHEMA, "limits": dict(DEFAULT_LIMITS)}
         if app:
             meta["app"] = app
             url = facts.get("url") or default_app_url()
@@ -1672,7 +1677,7 @@ def main() -> int:
 
     if a.cmd in ("add-node", "add-edge", "set-node", "set-edge", "set-palette", "weigh", "set-meta", "stats",
                  "remove-node", "remove-edge", "validate", "merge", "info",
-                 "history", "undo", "declare"):
+                 "history", "undo", "declare", "limits"):
         path = resolve_graph(a.graph); g = load(path)
         if a.cmd == "set-palette":
             g["meta"].setdefault("colors", {})[a.kind] = a.color
@@ -1986,6 +1991,19 @@ def main() -> int:
                        if url else "see assets/README.md")
                 r["warnings"].append(f"meta.app names '{app}' but assets/{app}.html is not "
                                      f"here — render will fail; {how}")
+            lim = (g.get("meta") or {}).get("limits") or {}
+            if lim.get("nodes") or lim.get("edges"):
+                over = []
+                if lim.get("nodes") and len(g.get("nodes", [])) > lim["nodes"]:
+                    over.append(f"{len(g['nodes'])} nodes over the {lim['nodes']} asked for")
+                if lim.get("edges") and len(g.get("edges", [])) > lim["edges"]:
+                    over.append(f"{len(g['edges'])} edges over the {lim['edges']} asked for")
+                if over:
+                    r["info"].append(
+                        "over this graph's own draw limits (" + ", ".join(over) +
+                        ") — legal to write, but the page will open it grouped; "
+                        "`limits --nodes N --edges M` changes what it asks for")
+
             # A declared relation is a promise about both ends. Check the edges that use one:
             # a `part-of` running into a paper is not a typo the reader can see on screen.
             decls = (g.get("meta") or {}).get("edges") or []
@@ -2302,26 +2320,26 @@ def main() -> int:
               ", ".join(f"{k}={v}" for k, v in sorted(vis.items())))
         return 0
 
-    if a.cmd == "capacity":
+    if a.cmd == "limits":
         path = resolve_graph(a.graph)
         g = load(path)
-        vis = g["meta"].setdefault("visuals", {})
-        if a.nodes is None:
-            n = vis.get("max_nodes")
-            print(f"recorded budget: {n} nodes" if n else
-                  "no budget recorded — the viewer measures the host it runs on")
-            if vis.get("max_nodes_note"):
-                print(f"  {vis['max_nodes_note']}")
+        cur = (g.get("meta") or {}).get("limits") or dict(DEFAULT_LIMITS)
+        if a.nodes is None and a.edges is None:
+            n, e = len(g.get("nodes", [])), len(g.get("edges", []))
+            print(f"limits {cur.get('nodes')} nodes / {cur.get('edges')} edges")
+            print(f"this graph is {n} nodes / {e} edges — "
+                  + ("within them" if n <= cur.get("nodes", n) and e <= cur.get("edges", e)
+                     else "over them, so the page opens it grouped"))
+            print("ask for more:  limits --nodes N --edges M   "
+                  "(it is a request, not a hard stop — the page decides)")
             return 0
-        vis["max_nodes"] = a.nodes
-        if a.note:
-            vis["max_nodes_note"] = a.note
+        meta = g.setdefault("meta", {})
+        meta["limits"] = {"nodes": int(a.nodes if a.nodes is not None else cur.get("nodes", DEFAULT_LIMITS["nodes"])),
+                          "edges": int(a.edges if a.edges is not None else cur.get("edges", DEFAULT_LIMITS["edges"]))}
         save(g, path)
-        print(f"recorded {a.nodes} nodes as this graph's budget"
-              f"{' — ' + a.note if a.note else ''}")
-        print("  the viewer measures the *host*, not the file: this is the fallback for a "
-              "machine that cannot measure itself")
+        print(f"limits {meta['limits']['nodes']} nodes / {meta['limits']['edges']} edges")
         return 0
+
 
     if a.cmd == "render":
         path = resolve_graph(a.graph)

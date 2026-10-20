@@ -195,7 +195,7 @@ Two ways to control how a graph looks, and both are data — never a change to t
 | "arrows should show what cites what", and the same relation is used 2,000 times | `declare --edge cite --dir out --from paper --to paper --color "#3f6fd8"`, then `add-edge … --rel cite` | the relation's direction, its allowed ends and its look are declared once; every edge of that name inherits them, and `validate` refuses an edge with the wrong ends |
 | "undo that" / "what changed?" | `history --graph <id>`, `undo --graph <id> [--steps n]` | every change is committed when git is present (only that graph's folder), so a wrong sweep is one command back |
 | "this graph should read bigger/smaller" | `visuals --graph X --edge-width 1.4 --node-scale 1.2` | global scale for the whole graph |
-| "10k articles, but my laptop dies" | nothing — the viewer measures the host and collapses what it cannot hold; `capacity --nodes N` only records a fallback | how much of a big graph is drawn |
+| "10k articles, but my laptop dies" | `limits --nodes N --edges M` — two numbers the page respects by opening the graph grouped; write the graph anyway | how much is drawn at once; the page decides how, the numbers only say how much it should try to hold |
 
 **Intrinsic: what happens when nobody asks.** A node with no `weight` and no `size` is drawn
 from ½ × the summed power of its edges × a multiplier for its kind; an edge with no `power` is

@@ -190,6 +190,27 @@ Size and placement are asked for, not applied: `weight` or `size` on the nodes y
 `power` on the relations that matter, `ring` to say centre/middle/periphery. Everything left out
 is filled in from the graph itself, so a document with none of them still reads.
 
+## `meta.limits` — how much of this graph to draw at once
+
+Two numbers, and two only:
+
+```json
+"meta": { "limits": { "nodes": 500, "edges": 5000 } }
+```
+
+They are a **request addressed to the page**, not a rule the engine enforces: the document is
+written whole, and how much of it is drawn is the page's decision on the host it is actually
+running on. When a graph is over them, the page opens **grouped to its top layer** and says so,
+and drawing everything is a two-step decision, because it is the one operation that can make the
+tab unusable. A reader — or a measurement of a faster machine — may rewrite the numbers later:
+
+```
+kg.py limits --graph <id> --nodes 2000 --edges 20000
+kg.py limits --graph <id>            # what it asks for, and where it stands
+```
+
+`validate` treats a graph over its own numbers as conformant with a note, never an error.
+
 ## `meta.edges` — relations that are declared, not repeated
 
 A relation is a decision about *direction* and *ends*, and that decision belongs in the document
@@ -236,7 +257,7 @@ which is the difference between "the viewer draws arrows" and "this graph draws 
 | `edge_width` | multiply every relation's width (`visuals --edge-width 1.4`) |
 | `node_scale` | multiply every node's radius |
 | `halo` | draw a ring around a node that has nodes collapsed inside it (default on) |
-| `max_nodes` | the node budget this graph was *measured* at (`capacity --nodes 4000 --note "…"`). A fallback, not a rule: the viewer measures the host it is running on |
+| `max_nodes` | superseded by `meta.limits` — kept readable, no longer written |
 
 **A relation's words are its type, and a measured number is a property.** `co-cited in 66 works`
 is not a relation type, it is one relation word wearing a number: nineteen such edges are nineteen
