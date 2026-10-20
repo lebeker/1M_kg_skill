@@ -73,7 +73,23 @@ silently drops a colour.
 | `link` | no | a single URL. Adapters lift URLs out of `desc` when a format buries them there (see `scripts/adapters/`) |
 | `x`,`y` | no | authored position. If **every** node has them they are used as given; if any node carries `ring` the rings are built; with neither, the graph is laid out in the browser on open (the page says `layout computed here`) |
 | `ring` | no | placement as a concentric ring: `0` is the centre, higher numbers are further out. The usual assignment is organisations 0, researchers 1, publications 2, subjects 3 |
+| `cited_by` | no | how many works the index says cite this one. **A count, not a list.** Store it with `cited_by_source` (`openalex`, `crossref`, `s2`) and `cited_by_at` (a date) — a bare number ages into a lie. It comes free with any record you fetch; never pay a search for it |
+| `desc_rev` | no | **bookkeeping, not content**: the node's degree at the moment its description was written. `validate` uses it to warn that a description went stale. The panel never shows it |
 | anything else | no | a property in its own right. Carried through untouched and given its own row in the panel |
+
+Three numbers are worth distinguishing, and only one of them is stored:
+
+```
+cited 300 · 6 here · 20 pulled
+      │        │        └── the list you actually fetched (OpenCitations `/citations/<doi>`, free)
+      │        └────────── computed from the `cites` edges already drawn — never stored, so it cannot
+      │                       disagree with the picture
+      └─────────────────── `cited_by`, from the record
+```
+
+The middle one is the only one that can be computed, and the right one is the only one that can be
+bought. A fourth number that is a judgement ("20 relevant") has no source and does not belong in a
+document.
 
 `level` and `style` are what make a graph readable at a glance instead of a hairball.
 A graph where everything is `level 0, style solid` is a ring of dots and argues nothing.
