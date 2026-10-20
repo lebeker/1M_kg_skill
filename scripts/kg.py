@@ -80,6 +80,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -262,13 +263,46 @@ def repo_root_for(path: Path) -> Path | None:
     return None
 
 
-def autocommit(path: Path, note: str | None = None) -> None:
+def _batch_file(root: Path) -> Path:
+    return root / ".git" / "kg-batch.json"
+
+
+def _read_batch(root: Path) -> dict:
+    try:
+        return json.loads(_batch_file(root).read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_batch(root: Path, data: dict) -> None:
+    try:
+        _batch_file(root).write_text(json.dumps(data, indent=1, sort_keys=True))
+    except OSError:
+        pass
+
+
+def _git_age(root: Path, commit: str) -> float:
+    out = _git(root, "log", "-1", "--format=%ct", commit)
+    try:
+        return time.time() - float(out.stdout.strip())
+    except ValueError:
+        return float("inf")
+
+
+def autocommit(path: Path, note: str | None = None, seal: bool = False) -> None:
     """
     Record one change. Best effort by design: a machine without git, or a workspace the reader
     asked to leave alone (`KG_NO_GIT=1`), is a normal machine, not an error.
 
     Only the graph's own folder is staged, so a workspace that happens to sit inside someone's
     notes repository does not get their unrelated edits swept into a commit.
+
+    **A batch, not a command.** One commit per `add-node` produced 437 commits for a 35-node
+    article: history nobody can read, and a rollback target for every keystroke. What a reader
+    actually asks for is "put it back the way it was before this turn", so consecutive edits to
+    the same graph land in one commit — amended in place — until either the agent seals it with
+    `kg commit -m`, or `KG_SQUASH_WINDOW` seconds pass (default 1800). `KG_NO_SQUASH=1` restores
+    one-commit-per-command for anyone who wants it.
     """
     if os.environ.get("KG_NO_GIT") or not shutil.which("git"):
         return
@@ -285,7 +319,53 @@ def autocommit(path: Path, note: str | None = None) -> None:
     if not _git(root, "diff", "--cached", "--quiet", "--", str(rel)).returncode:
         return  # nothing changed
     msg = note or LAST_CMD or f"update {path.parent.name}"
-    _git(root, "commit", "-q", "-m", msg, "--", str(rel))
+    head = _git(root, "rev-parse", "HEAD").stdout.strip()
+    state = _read_batch(root)
+    key = str(rel)
+    cur = state.get(key) or {}
+    window = float(os.environ.get("KG_SQUASH_WINDOW", "1800"))
+    squash = not os.environ.get("KG_NO_SQUASH") and not seal
+    same_batch = (
+        bool(head)
+        and cur.get("commit") == head
+        and not cur.get("sealed")
+        and _git_age(root, head) <= window
+    )
+    if squash and same_batch:
+        count = int(cur.get("count") or 1) + 1
+        first = cur.get("first") or msg
+        text = first if count == 1 else f"{first} (+{count - 1} more)"
+        _git(root, "commit", "-q", "--amend", "-m", text)
+        cur = {"commit": _git(root, "rev-parse", "HEAD").stdout.strip(), "first": first,
+               "count": count, "sealed": False, "at": time.time()}
+    else:
+        _git(root, "commit", "-q", "-m", msg, "--", str(rel))
+        cur = {"commit": _git(root, "rev-parse", "HEAD").stdout.strip(), "first": msg,
+               "count": 1, "sealed": bool(seal), "at": time.time()}
+    state[key] = cur
+    _write_batch(root, state)
+
+
+def seal_batch(path: Path, message: str) -> tuple[bool, str]:
+    """Give the current batch a message a person wrote, and close it."""
+    root = repo_root_for(path)
+    if root is None or not shutil.which("git"):
+        return False, "no git repository here (or no git installed) — nothing to seal"
+    try:
+        rel = path.parent.relative_to(root)
+    except ValueError:
+        return False, "this graph is outside the repository"
+    head = _git(root, "rev-parse", "HEAD").stdout.strip()
+    if not head:
+        return False, "nothing recorded yet"
+    _git(root, "commit", "-q", "--amend", "-m", message)
+    head = _git(root, "rev-parse", "HEAD").stdout.strip()
+    state = _read_batch(root)
+    cur = state.get(str(rel)) or {}
+    state[str(rel)] = {"commit": head, "first": message, "count": int(cur.get("count") or 1),
+                       "sealed": True, "at": time.time()}
+    _write_batch(root, state)
+    return True, head[:7]
 
 
 def graph_history(path: Path, limit: int = 12) -> list[str]:
@@ -312,7 +392,7 @@ def graph_undo(path: Path, steps: int = 1) -> tuple[bool, str]:
     if show.returncode != 0:
         return False, f"could not read that version: {show.stderr.strip().splitlines()[:1]}"
     path.write_text(show.stdout)
-    autocommit(path, f"undo {steps} change(s) of {path.parent.name}")
+    autocommit(path, f"undo {steps} change(s) of {path.parent.name}", seal=True)
     return True, target[:7]
 
 
@@ -1041,7 +1121,10 @@ def relations_of(facts: dict) -> list[dict]:
         name = e.get("name")
         if not name:
             continue
-        entry = {"name": str(name), "dir": str(e.get("dir") or "none")}
+        # `seeded` says where this word came from: the app, not the author. `validate` uses it
+        # to stay quiet about vocabulary a focused graph has not needed yet — an app's whole
+        # word list is a suggestion, and a suggestion that reads as a defect is a broken tool.
+        entry = {"name": str(name), "dir": str(e.get("dir") or "none"), "seeded": True}
         if e.get("from"):
             entry["from"] = list(e["from"])
         if e.get("to"):
@@ -1456,6 +1539,11 @@ def main() -> int:
     p.add_argument("--from", dest="src", required=True)
     p.add_argument("--to", dest="dst", required=True)
 
+    p = with_graph(sub.add_parser("commit",
+                                  help="give the batch of changes so far a message, and close it"))
+    p.add_argument("-m", "--message", required=True,
+                   help="what this batch did, in the author's words — the line `history` shows")
+
     p = with_graph(sub.add_parser("history", help="what changed in this graph, newest first"))
     p.add_argument("--limit", type=int, default=12)
 
@@ -1709,7 +1797,7 @@ def main() -> int:
 
     if a.cmd in ("add-node", "add-edge", "set-node", "set-edge", "set-palette", "weigh", "set-meta", "stats",
                  "remove-node", "remove-edge", "validate", "merge", "info",
-                 "history", "undo", "declare", "limits"):
+                 "history", "undo", "commit", "declare", "limits"):
         path = resolve_graph(a.graph); g = load(path)
         if a.cmd == "set-palette":
             g["meta"].setdefault("colors", {})[a.kind] = a.color
@@ -1956,6 +2044,14 @@ def main() -> int:
             save(g, path)
             print(f"removed edge {a.src} -> {a.dst} -> {len(g['edges'])} edges")
             return 0
+        if a.cmd == "commit":
+            ok, detail = seal_batch(path, a.message.strip())
+            if not ok:
+                print(f"no commit: {detail}", file=sys.stderr)
+                return 2
+            print(f"committed {detail}: {a.message.strip()}")
+            return 0
+
         if a.cmd == "history":
             rows = graph_history(path, a.limit)
             if not rows:
@@ -2058,7 +2154,12 @@ def main() -> int:
                     if not ok:
                         mismatched.append(f"{e.get('from')} -> {e.get('to')} ({name}: "
                                           f"{got[0] or '?'} -> {got[1] or '?'})")
-                for name in by_name:
+                for name, d in by_name.items():
+                    # Vocabulary the app seeded is a suggestion: a graph that hasn't needed
+                    # `co-cited` yet is not broken. Only a word the author declared by hand and
+                    # then never used is worth saying out loud.
+                    if d.get("seeded"):
+                        continue
                     if not any((e.get("label") or "") == name for e in g.get("edges", [])):
                         unknown.append(name)
                 if mismatched:

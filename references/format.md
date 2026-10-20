@@ -249,18 +249,45 @@ attributes, and changing the declaration changes every `cite` edge at once. `val
 edge that breaks the contract (`cite` running into a concept is an error, not a style choice), and
 the viewer reads the same declarations, so what the engine checks is what the page draws.
 
-## History — every change is a version
+## History — a batch is a version, not a command
 
-If `git` is installed, `save` commits each change with the command that caused it, staging only
-that graph's folder. Nothing leaves the machine; without git the engine works exactly as before.
+If `git` is installed, `save` records changes, staging only that graph's folder. Nothing leaves
+the machine; without git the engine works exactly as before.
+
+Consecutive edits land in **one commit, amended in place**, until the batch is closed. One commit
+per command produced 437 commits for one 35-node article — a history nobody can read, and a
+rollback target for every keystroke. What a reader asks for is "put it back the way it was before
+this turn", so the unit of history is the batch:
 
 ```
+kg.py commit  --graph <id> -m "what this batch did"   # seal it, with a sentence a person wrote
 kg.py history --graph <id> [--limit 12]
 kg.py undo    --graph <id> [--steps 1]
 ```
 
-`undo` restores the graph from `steps` changes ago and records the undo as a change of its own, so
-it can itself be undone. `KG_NO_GIT=1` opts a workspace out.
+- A batch closes when you seal it with `commit -m`, after `KG_SQUASH_WINDOW` seconds (default
+  1800) with no new edit, or when `KG_NO_SQUASH=1` asks for the old one-commit-per-command.
+- **Seal a batch when the user's request is finished**, not after every step: the user sees
+  "before you started" and "after", so that is the pair a rollback has to restore.
+- `undo` restores the graph from `steps` recorded batches ago and is recorded as a batch of its
+  own, so it can itself be undone.
+- `KG_NO_GIT=1` opts a workspace out entirely.
+
+## `meta.layout` — who decides where the dots go
+
+`x`/`y` belong to the viewer, not to the author. A document can say which rule draws it:
+
+| `meta.layout` | what happens |
+|---|---|
+| `"force"` | the coordinates in the file are ignored; the page lays the graph out from its edges |
+| absent, every node has `x`/`y` | the author's placement, used as given |
+| absent, nodes carry `ring` | rings are built: 0 at the centre, higher numbers further out |
+| absent, no geometry | force, from a deterministic start (the same file looks the same twice) |
+
+Writing coordinates by hand is the most expensive thing an author can do — 221 of 437 commands in
+one real run were `set-node`, almost all of them moving a dot. Say `layout: force` and spend the
+commands on the data instead. 3D always lays out from the edges; `meta.layout` is how the 2D view
+is told to do the same.
 
 ## `meta.visuals` — how this graph wants to look
 
@@ -273,6 +300,7 @@ which is the difference between "the viewer draws arrows" and "this graph draws 
 | `edge_width` | multiply every relation's width (`visuals --edge-width 1.4`) |
 | `node_scale` | multiply every node's radius |
 | `halo` | draw a ring around a node that has nodes collapsed inside it (default on) |
+| `labels` | `on`, `hover` or `off` — how much of the map is named at rest (`visuals --labels hover`). Default: `on` up to 50 nodes, `hover` above |
 | `max_nodes` | superseded by `meta.limits` — kept readable, no longer written |
 
 **A relation's words are its type, and a measured number is a property.** `co-cited in 66 works`

@@ -193,7 +193,7 @@ Two ways to control how a graph looks, and both are data — never a change to t
 | "I don't want to see arrows" | `visuals --graph X --arrows off` (the default), or `--style arrow` on one edge | whether a directed relation gets a head — the graph decides, not the viewer |
 | "those edges should be blue and dotted" | `add-edge … --style dotted --color "#8fa3c8"`, or `set-edge --from a --to b --style "dashed arrow"` | the relation's appearance: stroke (`solid`/`dashed`/`dotted`), shape (`arrow`/`double`/`clamped`/`rectangle`/`triangle`), colour, dash pattern, width |
 | "arrows should show what cites what", and the same relation is used 2,000 times | `declare --edge cite --dir out --from paper --to paper --color "#3f6fd8"`, then `add-edge … --rel cite` | the relation's direction, its allowed ends and its look are declared once; every edge of that name inherits them, and `validate` refuses an edge with the wrong ends |
-| "undo that" / "what changed?" | `history --graph <id>`, `undo --graph <id> [--steps n]` | every change is committed when git is present (only that graph's folder), so a wrong sweep is one command back |
+| "undo that" / "what changed?" | `history --graph <id>`, `undo --graph <id> [--steps n]` | changes are committed in batches when git is present (only that graph's folder), so a wrong sweep is one command back |
 | "this graph should read bigger/smaller" | `visuals --graph X --edge-width 1.4 --node-scale 1.2` | global scale for the whole graph |
 | "10k articles, but my laptop dies" | `limits --nodes N --edges M` — two numbers the page respects by opening the graph grouped; write the graph anyway | how much is drawn at once; the page decides how, the numbers only say how much it should try to hold |
 
@@ -315,10 +315,22 @@ reporting — not a reason to edit the app.**
    is what the search box is for.
 
 7. **If the picture is wrong** — hairball, overlapping labels, everything on one row —
-   fix the **artifact** (levels, sizes, colours, authored positions), not the HTML by
-   hand, and repeat from step 5.
+   fix the **artifact** (levels, sizes, colours, `meta.layout`), not the HTML by hand, and
+   repeat from step 5. **Look twice, not forty times.** Two screenshots — after the first
+   full render and once at the end — are enough to catch a broken picture. Looking after
+   every node is how a graph becomes a canvas: one real run spent 221 of 437 commands moving
+   dots and 27 screenshots checking them, while the data sat still.
 
-8. **Validate before you hand over — this is what makes it a shareable artifact.**
+8. **Work in batches; commit a batch, not a node.** Every write is recorded (when git is
+   present) and consecutive edits amend one commit, so a whole turn costs one version. Close
+   it when the user's request is done:
+   ```bash
+   python3 "$ENGINE" commit --graph <id> -m "what this batch did"
+   ```
+   ✅ `history` shows one line per batch, and `undo` puts the graph back to before the batch —
+   which is the only rollback a reader ever asks for.
+
+9. **Validate before you hand over — this is what makes it a shareable artifact.**
    ```bash
    python3 "$ENGINE" validate
    ```
@@ -326,7 +338,7 @@ reporting — not a reason to edit the app.**
    `error:`; `warning:` lines are judgement calls, `note:` lines are facts about the
    graph you should know before editing it.
 
-9. **Hand it over.** See the next section — this is not optional, and a bare filename
+10. **Hand it over.** See the next section — this is not optional, and a bare filename
    is not a handover.
 
 ## Viewers are pluggable — the skill does not carry its own
