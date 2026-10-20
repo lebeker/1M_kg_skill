@@ -66,7 +66,7 @@ silently drops a colour.
 | `label` | yes | what the reader sees |
 | `kind` | yes | the type. Determines colour. Any string is allowed |
 | `level` | no | vertical position, the third axis: convention is low = foundational/concrete, high = abstract/evidence. **The 3D view is the only place it moves anything** — a ring- or force-laid-out 2D map ignores it, and a graph that does not use it should not carry it |
-| `size` | no | a weight **set by hand**, in the same units as `weight`. Leave it out and the node is drawn from its `weight` instead |
+| `size` | no | a radius **set by hand**, in pixels, overriding what the node's `weight` would draw. It exists for emphasis the connections do not support — a hub that matters for a reason the map cannot see. Leave it out and the radius comes from `weight`; `weight` is the claim, `size` is the override |
 | `weight` | no | how important the node is **on this map**: the number the drawing is a picture of. Half the summed power of the node's edges times a multiplier for its kind, unless the document states it (see *How a node's size is decided*) |
 | `style` | no | `solid` (settled), `hollow` (proposed), `cloud` / `critter` (threatening or eroding), `skull` (abandoned) |
 | `desc` | no | free text |
