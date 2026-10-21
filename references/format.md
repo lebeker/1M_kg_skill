@@ -132,9 +132,32 @@ everywhere carries the numbers itself.
 ### One kind axis, and what `level` means
 
 The multipliers are a drawing rule. `level` is the map's own notion of **depth** and nothing
-more: the root at 1, concepts at 2, papers at 2.5, people at 3, institutions and companies at 4.
+more: concepts at 2, publications at 3, people at 4, labs at 5, institutions and companies at 6.
 It is structure a reader may use; it is not a drawing setting. `weight` says how big a node is
 drawn and says nothing about who contains whom.
+
+**The anchors are whole numbers, and a node may stand anywhere between them.** The numbers
+above are what the app *suggests* for a kind (`meta.levels`, seeded by `new`); the document
+always wins. A level is a real number on one axis, so a hierarchy that a kind cannot express
+is written between the anchors:
+
+| what is being levelled | level | why |
+|---|---|---|
+| a root concept | `2` | it is the top of its own tree |
+| a sub-concept | `2.2`, `2.4`, `2.6` … | deeper than its root, still above every publication |
+| a satellite paper | `3.2`/`3.4` | a publication, but not one the map is about |
+| a principal author | `3.6` | a person who matters more than the paper they wrote |
+| a group the agent invented | any value between two anchors | a graph of one kind still folds if the agent groups it |
+
+Two consequences worth knowing before you assign levels:
+
+- **A single-kind graph does not need levels.** Eight publications at 3 have nothing to fold
+  into — that is a map, not a hierarchy. If it is too big to read, the answer is to *add*
+  grouping nodes (a `subject` at 2 with its own sentence) and let them fold, not to invent
+  levels that no edge supports.
+- **A level is only as good as the edges under it.** Two nodes at different levels that share
+  no edge are two branches, not a parent and a child. Folding follows edges; the level only
+  tells it which way is down.
 
 **Folding is the webapp's job, not the document's.** The document says what exists and how deep
 it sits; the viewer decides what to hide, what to count, and how to draw what is left. Nothing in

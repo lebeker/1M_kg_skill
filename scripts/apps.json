@@ -44,7 +44,7 @@
         "trial"
       ],
       "repo": "https://github.com/lebeker/1M_kg_sciense-kg_webapp",
-      "url": "https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/viewer-v0.0.41/viewer.html",
+      "url": "https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/viewer-v0.0.42/viewer.html",
       "manifest_url": "https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/main/app.json",
       "requires": {
         "skills": [
@@ -72,7 +72,16 @@
         "arxiv": "preprints, which appear here months before anywhere else",
         "a web-search tool": "the only way to evidence a company — no free API lists what a private company is working on"
       },
-      "skills_url": "https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/main/skills"
+      "skills_url": "https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/main/skills",
+      "levels": {
+        "subject": 2,
+        "publication": 3,
+        "researcher": 4,
+        "lab": 5,
+        "institution": 6,
+        "company": 6
+      },
+      "level_note": "where a kind sits on the fold axis when a node of that kind carries no `level` of its own. Whole numbers: the axis is one coordinate, and a node may stand anywhere between them — a sub-concept at 2.2, a satellite paper at 3.4, a researcher who matters more than the paper at 3.6. The document always wins."
     }
   ]
 }

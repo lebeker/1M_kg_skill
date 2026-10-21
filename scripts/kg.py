@@ -1887,6 +1887,11 @@ def main() -> int:
         # needs is a document that can be handed to someone else. An app fills them in.
         meta["requires"] = {k: list((facts.get("requires") or {}).get(k) or [])
                             for k in ("skills", "plugins", "tools")}
+        # The app's anchors for the fold axis: whole numbers per kind, and a node may stand
+        # anywhere between them. Seeded so the document carries what its app suggested instead
+        # of the viewer's own copy of the same table — and so it can be overridden per graph.
+        if isinstance(facts.get("levels"), dict) and facts["levels"]:
+            meta["levels"] = dict(facts["levels"])
         rels = relations_of(facts)
         if rels:
             meta["edges"] = rels
@@ -2478,7 +2483,11 @@ def main() -> int:
             print(f"nodes/edges : {len(g['nodes'])} / {len(g['edges'])}")
             print(f"kinds       : {dict(kinds)}")
             print(f"styles      : {dict(styles)}")
-            print(f"levels      : {lv if lv else '(none - layout will be computed)'}")
+            if lv:
+                print(f"levels      : {lv}")
+            else:
+                print("levels      : none — folding falls back to the kind anchors "
+                      "(2 concept / 3 publication / 4 person / 5 lab / 6 institution)")
             print(f"positioned  : {placed}/{len(g['nodes'])} have authored x,y")
             orphan = [n["id"] for n in g["nodes"]
                       if not any(e["from"] == n["id"] or e["to"] == n["id"] for e in g["edges"])]

@@ -262,6 +262,35 @@ wants a `trial`, or a `funding round`, or a `patent`, the answer is `add-node --
 not a new viewer. **If something set this way does not render, that is an app bug worth
 reporting — not a reason to edit the app.**
 
+## Levels: how deep a thing sits
+
+`level` is what folding reads. It is one axis, it is a **real number**, and the app only
+suggests where a kind sits (`meta.levels`: concepts 2, publications 3, people 4, labs 5,
+institutions and companies 6). The document decides.
+
+| you are placing | level |
+|---|---|
+| a root concept / subject | `2` |
+| a sub-concept under it | `2.2`, `2.4`, … — any value above 2 and below 3 |
+| a publication | `3` |
+| a satellite paper, not what the map is about | `3.2`–`3.4` |
+| a person | `4`, or `3.6` when they matter more than their paper |
+| a group **you** invented to keep a big map readable | between the two anchors above and below it |
+
+Three rules that keep this honest:
+
+- **Never write a level that no edge supports.** Folding walks edges: two nodes at different
+  levels with no relation between them are two branches, not a parent and a child.
+- **A single-kind graph does not need a hierarchy.** Two thousand papers at level 3 have
+  nothing to fold into, and that is fine. If the map is too big to read, **add** the grouping
+  nodes — a `subject` at 2 with its own sentence, publications under it — and let *them* fold.
+  Inventing levels over a flat list is how a graph starts lying about itself.
+- **`level` is not importance.** Importance is `weight`; a big node that sits on the surface
+  is exactly right. Nothing derives one from the other.
+
+`stats` lists the levels a graph actually uses; a graph with none folds by the kind anchors,
+which is a guess, and `merge` says so when a merge leaves half a graph levelled.
+
 ## When to Use
 
 - "map this research field", "show me what is happening in X"
@@ -282,13 +311,13 @@ reporting — not a reason to edit the app.**
    works for a graph that is not part of a workspace.
 
 2. **Add the nodes that carry the structure** — the concepts/questions, and the labs,
-   companies or people attached to them. Give each a `level` (vertical position) and a
-   `size` (importance).
+   companies or people attached to them. Give each a `level` (how deep it sits — see
+   *Levels*, above) and a `size` (importance).
    ```bash
    python3 "$ENGINE" add-node --id telo --label "Telomere attrition" \
-       --kind concept --level 2 --size 4 --style solid
+       --kind subject --level 2 --size 4 --style solid
    python3 "$ENGINE" add-node --id lab1 --label "Blackburn Lab" \
-       --kind lab --level 3 --size 3 --style solid --link "https://example.org/lab"
+       --kind lab --level 5 --size 3 --style solid --link "https://example.org/lab"
    ```
    ✅ `stats` shows the node counts rising and no `no palette` warning.
 
