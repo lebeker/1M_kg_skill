@@ -88,6 +88,36 @@ def convert(src: Path, title: str | None, schema: str, colors: dict) -> dict:
                 "desc": (it.get("desc") or "")[:300],
             })
 
+    # `parent` is the tree, and a tree is what folding reads. Carry it into `level` too:
+    # depth 0 sits at 2, and each level below takes an equal share of the space up to the
+    # next anchor (a publication at 3). Without this the import is 1033 flat concepts and
+    # exactly the nine nodes that happen to have a deeper neighbour can fold.
+    by_id = {n["id"]: n for n in nodes}
+
+    def depth_of(nid: str, seen: frozenset = frozenset()) -> int:
+        parent = by_id.get(nid, {}).get("parent")
+        if not parent or parent in seen or parent not in by_id:
+            return 0
+        return 1 + depth_of(parent, seen | {nid})
+
+    depths = {nid: depth_of(nid) for nid in by_id}
+    # A parent pointer the viewer never sees is not a hierarchy: folding walks edges. So the
+    # tree is also written as edges — parent contains child — faint and dotted, because they
+    # are structure, not a claim about the field.
+    seen_edges = {(e["from"], e["to"]) for e in edges}
+    for nid, n in by_id.items():
+        parent = n.get("parent")
+        if parent in by_id and (parent, nid) not in seen_edges:
+            edges.append({"from": parent, "to": nid, "label": "contains", "dir": "out",
+                          "power": 0.3, "style": "dotted"})
+            seen_edges.add((parent, nid))
+    top = max(depths.values()) if depths else 0
+    span = 1.0  # 2 -> 3: the gap to the first anchor below a concept
+    for nid, n in by_id.items():
+        if isinstance(n.get("level"), (int, float)):
+            continue
+        n["level"] = round(2 + span * depths[nid] / (top + 1), 2) if top else 2
+
     return {
         "meta": {
             "title": title or src.stem,
