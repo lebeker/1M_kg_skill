@@ -36,6 +36,21 @@ export ENGINE="$PWD/scripts/kg.py"     # run from this folder
 
 ✅ `test -f "$ENGINE"` exits 0 and `python3 "$ENGINE" --help` prints the command list.
 
+### History is a reply boundary, not a command
+
+Every write is versioned when `git` is present, and **commits are batched**: consecutive edits
+amend one commit, and `kg commit --graph <id> -m "…"` closes the batch. Two rules follow, and
+neither is optional:
+
+- **Never commit per command.** `add-node` after `add-node` is one change, not forty. Writing
+  `git commit` yourself is doing the engine's job, and doing it wrong.
+- **Close the batch before you reply.** The reader sees "before you started" and "after you
+  finished"; that pair is the rollback they will ask for. A batch left open means the rollback
+  point sits inside work they have not seen yet.
+
+One real run produced 437 commits for a 35-node article — 221 of them moving dots — and no
+readable history at all. That is the failure this rule exists to prevent.
+
 ## Start here
 
 If you have just been pointed at this folder and are not sure what to do, run these
@@ -322,9 +337,9 @@ reporting — not a reason to edit the app.**
    dots and 27 screenshots checking them, while the data sat still. The page has an
    `x/y · force` switch; you do not have to place every dot for the picture to be right.
 
-8. **Work in batches; commit a batch, not a node.** Every write is recorded (when git is
-   present) and consecutive edits amend one commit, so a whole turn costs one version. Close
-   it when the user's request is done:
+8. **Work in batches; commit a batch, not a node.** Consecutive edits amend one commit, so a
+   whole turn costs one version. Close it when the user's request is done — as the last thing
+   you do before replying, not in the middle of the work:
    ```bash
    python3 "$ENGINE" commit --graph <id> -m "what this batch did"
    ```
