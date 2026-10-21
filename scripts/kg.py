@@ -2388,6 +2388,10 @@ def main() -> int:
                       f"other one ({len(meta_took)} field(s))")
             else:
                 print("meta      kept this graph's — the other one had nothing it lacked")
+            levelled = sum(1 for n in g["nodes"] if isinstance(n.get("level"), (int, float)))
+            if 0 < levelled < len(g["nodes"]):
+                print(f"levels    {levelled} of {len(g['nodes'])} nodes carry one — a graph with "
+                      f"half a hierarchy folds one half and guesses the other")
             return 0
         if a.cmd == "set-node":
             extra, bad = parse_sets(a.set)
