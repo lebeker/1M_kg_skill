@@ -284,10 +284,15 @@ kg.py undo    --graph <id> [--steps 1]
 | absent, nodes carry `ring` | rings are built: 0 at the centre, higher numbers further out |
 | absent, no geometry | force, from a deterministic start (the same file looks the same twice) |
 
+`meta.layout` is a **default**, not a law: the page carries an `x/y · force` switch next to the
+2D/3D buttons and the reader can overrule the file at any time. 3D reads the same switch — with
+`x/y` it holds every node where the document put it and uses `level` as depth, so the two views
+are one picture seen from two angles; with `force` it runs its own simulation. A node may carry
+`x`, `y` and `z`; the z is depth in 3D and is ignored in 2D.
+
 Writing coordinates by hand is the most expensive thing an author can do — 221 of 437 commands in
-one real run were `set-node`, almost all of them moving a dot. Say `layout: force` and spend the
-commands on the data instead. 3D always lays out from the edges; `meta.layout` is how the 2D view
-is told to do the same.
+one real run were `set-node`, almost all of them moving a dot. Place roughly, in a box, and leave
+it: `force` is there if the picture needs redrawing, and the reader can press it without you.
 
 ## `meta.visuals` — how this graph wants to look
 

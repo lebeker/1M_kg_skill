@@ -319,7 +319,8 @@ reporting — not a reason to edit the app.**
    repeat from step 5. **Look twice, not forty times.** Two screenshots — after the first
    full render and once at the end — are enough to catch a broken picture. Looking after
    every node is how a graph becomes a canvas: one real run spent 221 of 437 commands moving
-   dots and 27 screenshots checking them, while the data sat still.
+   dots and 27 screenshots checking them, while the data sat still. The page has an
+   `x/y · force` switch; you do not have to place every dot for the picture to be right.
 
 8. **Work in batches; commit a batch, not a node.** Every write is recorded (when git is
    present) and consecutive edits amend one commit, so a whole turn costs one version. Close
