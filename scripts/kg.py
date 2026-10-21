@@ -906,6 +906,110 @@ def find_skill(name: str) -> Path | None:
     return None
 
 
+MERGE_NEVER = {"id", "title", "app", "app_url", "schema"}
+
+
+def _relation_key(d: dict) -> str:
+    """How a declared relation is identified when two graphs are unioned. The name is the
+    thing edges carry, so it decides; label and pattern are the fallbacks for older files."""
+    return str(d.get("name") or d.get("label") or d.get("pattern") or "").strip().lower()
+
+
+def merge_meta(dst: dict, src: dict) -> list[str]:
+    """Take what the other graph knows and this one does not.
+
+    A merged graph that drops `meta.colors` or the relation declarations renders differently
+    from both files it came from: kinds fall back to a hash colour and relations lose their
+    direction, dash and head. So: a key only the other graph has is taken whole; a declaration
+    table is unioned; anything else the target already holds stays the target's. The target's
+    identity — id, title, app, app_url, schema — is never taken: a merge is not a rename.
+    """
+    took: list[str] = []
+    for k, v in (src or {}).items():
+        if k in MERGE_NEVER:
+            continue
+        cur = dst.get(k)
+        if cur in (None, "", [], {}):
+            dst[k] = json.loads(json.dumps(v))
+            took.append(k)
+            continue
+        if k == "edges" and isinstance(cur, list) and isinstance(v, list):
+            have = {_relation_key(x) for x in cur if isinstance(x, dict)}
+            for rel in v:
+                if isinstance(rel, dict) and _relation_key(rel) not in have:
+                    cur.append(json.loads(json.dumps(rel)))
+                    have.add(_relation_key(rel))
+                    took.append("edges")
+        elif isinstance(cur, dict) and isinstance(v, dict):
+            for kk, vv in v.items():
+                if k == "requires" and isinstance(vv, list):
+                    cur.setdefault(kk, [])
+                    for item in vv:
+                        if item not in cur[kk]:
+                            cur[kk].append(item)
+                            took.append(f"requires.{kk}")
+                elif cur.get(kk) in (None, "", [], {}):
+                    cur[kk] = json.loads(json.dumps(vv))
+                    took.append(f"{k}.{kk}")
+    return took
+
+
+def self_skill_name() -> str:
+    """The name of the skill this engine runs from — a graph that requires it is already
+    being served, and re-downloading itself over the copy in use is not an install."""
+    md = Path(__file__).resolve().parent.parent / "SKILL.md"
+    try:
+        for line in md.read_text().splitlines()[:12]:
+            if line.startswith("name:"):
+                return line.split(":", 1)[1].strip()
+    except OSError:
+        pass
+    return "kg"
+
+
+def skills_install_root() -> Path:
+    """Where a fetched skill lands. $KG_SKILLS_PATH is the answer when the user has one;
+    otherwise the first skills folder that already exists and can be written to, because
+    that is the folder this agent is actually reading."""
+    env = os.environ.get("KG_SKILLS_PATH")
+    if env:
+        first = next((p.strip() for p in env.split(":") if p.strip()), "")
+        if first:
+            return Path(first).expanduser()
+    for r in skill_search_roots():
+        if r.is_dir() and os.access(r, os.W_OK):
+            return r
+    return Path.cwd() / ".codex" / "skills"
+
+
+def fetch_text(url: str) -> tuple[str | None, str]:
+    """One GET, one attempt. A retry against a metered endpoint is a second charge."""
+    try:
+        rq = urllib.request.Request(url, headers={"User-Agent": "kg-skill-check/1"})
+        with urllib.request.urlopen(rq, timeout=25) as r:
+            return r.read().decode("utf-8"), ""
+    except Exception as e:  # noqa: BLE001 - the message is the point
+        return None, str(e)
+
+
+def install_skill(name: str, base: str, root: Path) -> tuple[bool, str]:
+    """Fetch `<base>/<name>/SKILL.md` into `<root>/<name>/SKILL.md`.
+
+    The entry file only: a skill that carries references/ still needs its repo, and saying
+    that here is cheaper than a half-installed skill nobody can debug.
+    """
+    url = base.rstrip("/") + "/" + name + "/SKILL.md"
+    body, err = fetch_text(url)
+    if body is None:
+        return False, f"{url} — {err}"
+    if "---" not in body[:40]:
+        return False, f"{url} — that is not a SKILL.md (no frontmatter)"
+    dest = root / name / "SKILL.md"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(body)
+    return True, str(dest)
+
+
 def check_graph(g: dict, path: Path, install: bool, probe: bool) -> int:
     """What does this graph need to be shown, and what of that is missing?
 
@@ -945,7 +1049,15 @@ def check_graph(g: dict, path: Path, install: bool, probe: bool) -> int:
             except Exception as e:
                 print(f"          NOT reachable: {e}")
 
+    facts = app_facts(app)
+    notes = facts.get("tool_notes") or {}
+    base = str(facts.get("skills_url") or meta.get("skills_url") or "")
+    print(f"skills    " + (f"from {base}" if base else
+                          "this app does not say where its skills come from — they can be "
+                          "checked, not fetched"))
+
     declared = {k: list(req.get(k) or []) for k in ("skills", "plugins", "tools")}
+    missing_skills: list[str] = []
     if not any(declared.values()):
         print("requires  nothing declared (see `require`)")
     else:
@@ -953,6 +1065,8 @@ def check_graph(g: dict, path: Path, install: bool, probe: bool) -> int:
             for name in names:
                 if kind == "skills":
                     found = find_skill(name)
+                    if not found:
+                        missing_skills.append(name)
                     state = (f"found — {found}" if found else
                              "not found in " +
                              ", ".join(str(r) for r in skill_search_roots() if r.is_dir()))
@@ -963,6 +1077,40 @@ def check_graph(g: dict, path: Path, install: bool, probe: bool) -> int:
                     state = "declared source — used when searching or enriching"
                 print(f"{kind[:-1]:<9} {name}"
                       .ljust(20) + f" {state}")
+
+    me = self_skill_name()
+    if me in missing_skills:
+        missing_skills.remove(me)
+        print(f"          {me} is the skill running now — not fetched over itself")
+
+    if missing_skills and install:
+        print()
+        if not base:
+            print("          cannot install: the app names no skills_url, and a skill "
+                  "downloaded from a guessed address is not one to run")
+        else:
+            root = skills_install_root()
+            print(f"installing {len(missing_skills)} skill(s) into {root} — because you "
+                  f"asked (--install)")
+            for name in missing_skills:
+                ok, detail = install_skill(name, base, root)
+                print(f"          {name}: " + (f"fetched — {detail}" if ok
+                                                else f"FAILED — {detail}"))
+            print("          fetched SKILL.md only; a skill that carries references/ "
+                  "still needs its repo")
+
+    sources = declared["tools"]
+    recommended = list(((facts.get("recommends") or {}).get("tools")) or [])
+    if sources or recommended:
+        print()
+        print("sources   what this app can be built from; none of them is called by this "
+              "command")
+        for name in sources:
+            print(f"          {name}" + (f" — {notes[name]}" if notes.get(name) else ""))
+        for name in recommended:
+            print(f"          also: {name}" + (f" — {notes[name]}" if notes.get(name) else ""))
+        print("          a paid or metered source is the user's call: state the price "
+              "before calling it, and never retry a failed call — a retry is a second charge")
 
     if not have:
         print()
@@ -1723,6 +1871,11 @@ def main() -> int:
                 print(f'ask       "{a.ask}"')
         facts = app_facts(chosen) if chosen else {}
         app = chosen or default_app()
+        # A graph that names an app carries what that app needs, whether the app was chosen
+        # by name, by `--ask`, or was simply the default. Otherwise `check` has nothing to
+        # say about a graph that is about to be handed to someone else.
+        if not facts and app:
+            facts = app_facts(app)
 
         meta = {"title": a.title, "schema": SCHEMA, "limits": dict(DEFAULT_LIMITS)}
         if app:
@@ -2224,10 +2377,17 @@ def main() -> int:
                     continue
                 g["edges"].append(dict(e, **{"from": s, "to": d}))
                 e_added += 1
+            meta_took = merge_meta(g.setdefault("meta", {}), other.get("meta") or {})
             save(g, path)
-            print(f"merged {other_path}: +{added} node(s) ({renamed} renamed, {skipped} "
+            print(f"merged {other_path} into {path}: +{added} node(s) ({renamed} renamed, {skipped} "
                   f"skipped), +{e_added} edge(s) -> {len(g['nodes'])} nodes / "
                   f"{len(g['edges'])} edges")
+            if meta_took:
+                fields = sorted({t.split(".")[0] for t in meta_took})
+                print(f"meta      kept this graph's; took {', '.join(fields)} from the "
+                      f"other one ({len(meta_took)} field(s))")
+            else:
+                print("meta      kept this graph's — the other one had nothing it lacked")
             return 0
         if a.cmd == "set-node":
             extra, bad = parse_sets(a.set)

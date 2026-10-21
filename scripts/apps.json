@@ -48,7 +48,11 @@
       "manifest_url": "https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/main/app.json",
       "requires": {
         "skills": [
-          "kg"
+          "kg",
+          "citations",
+          "paper-search",
+          "tech-area",
+          "co-citations"
         ],
         "plugins": [],
         "tools": [
@@ -67,7 +71,8 @@
         "crossref": "publisher metadata, DOIs and funders, for what OpenAlex has not indexed",
         "arxiv": "preprints, which appear here months before anywhere else",
         "a web-search tool": "the only way to evidence a company — no free API lists what a private company is working on"
-      }
+      },
+      "skills_url": "https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/main/skills"
     }
   ]
 }

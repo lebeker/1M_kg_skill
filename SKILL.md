@@ -474,6 +474,12 @@ python3 "$ENGINE" merge --other other --on-conflict rename
 # ... skip (default) keeps the existing node, overwrite replaces it, rename suffixes
 #     the incoming id with _m and records where it came from
 
+# A merge also merges `meta`: the palette, the relation declarations and the visuals the
+# other graph carries are taken where this graph has none. The target keeps its identity —
+# id, title, app, app_url — and wins wherever both sides say something. Without this a merged
+# graph renders in hash colours and its relations lose their direction, so the page shows
+# something neither file ever showed.
+
 # correct a mistake (these did not exist before; agents used to hand-edit the JSON)
 python3 "$ENGINE" remove-node --id typo1
 python3 "$ENGINE" remove-edge --from lab1 --to telo
