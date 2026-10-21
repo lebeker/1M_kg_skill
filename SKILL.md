@@ -27,6 +27,10 @@ field is made of, who works on it, what is applied versus speculative, and what 
 since last time. A text dump of the same facts tells you far less, so the loop below
 always ends with someone *looking at the picture*.
 
+**See one, before you build one:** <https://lebeker.github.io/1M_kg_sciense-kg_webapp/> — a
+prompt, the method note that came with it, the article, the `kg/1` document, and the page it
+renders into. <https://lebeker.github.io/1M_kg_sciense-kg_webapp/how-to/> explains every control.
+
 **This skill is self-contained.** It has no dependencies on any other project, and its
 paths are relative to this folder. `ENGINE` is used throughout as shorthand:
 
