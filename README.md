@@ -8,6 +8,9 @@ and it produces a single self-contained HTML page: what the field is made of, wh
 working on it, what is applied versus speculative, and what changed since last time.
 The picture is the point. A JSON dump of the same facts tells you far less.
 
+**A worked case:** <https://lebeker.github.io/1M_kg_sciense-kg_webapp/> — one article on the
+neurokinin antagonist class, the document it came from, and the page it renders into.
+
 Nothing here is specific to any one project. Import your own data, name your own node
 kinds, keep your graphs in your own workspace.
 
