@@ -560,7 +560,10 @@ broken:
 - **Search** — the box top-left, or press `/`. Typing filters across labels, kinds and
   tags; clicking a hit centres it. `Esc` clears.
 - **2D / 3D** — the buttons top-right switch renderer. The 3D one is loaded on demand
-  (about 1.4 MB), so the first click takes a moment. `fit` reframes the graph.
+  (about 1.4 MB), so the first click takes a moment. `fit` reframes the graph. Depth is the
+  document's: a node's `z` if it has one, else its `level` spread across the picture's own
+  width, else `weight` as gravity. Selection and the relation you point at in the panel behave
+  in 3D as they do in 2D — everything else dims.
 - **Selection** — clicking a node shows its label, kind, level, size, and then **every other
   property the node carries, each in its own row**: the panel has no fixed list of fields, so
   a property you put in the document is shown without anyone changing the app. A value that

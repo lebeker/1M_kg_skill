@@ -65,7 +65,8 @@ silently drops a colour.
 | `id` | yes | stable, unique, short. Edges refer to it. Never reuse it for different content |
 | `label` | yes | what the reader sees |
 | `kind` | yes | the type. Determines colour. Any string is allowed |
-| `level` | no | vertical position, the third axis: convention is low = foundational/concrete, high = abstract/evidence. **The 3D view is the only place it moves anything** — a ring- or force-laid-out 2D map ignores it, and a graph that does not use it should not carry it |
+| `level` | no | vertical position, the third axis: convention is low = foundational/concrete, high = abstract/evidence. **The 3D view is the only place it moves anything** — a ring- or force-laid-out 2D map ignores it, and a graph that does not use it should not carry it. In 3D the level span is scaled to the picture's own width, so a map is tilted rather than spiked |
+| `z` | no | **where the node sits in depth, when you want to say it yourself.** It wins over `level`, and `level` wins over `weight`: the viewer only reaches for its own rule when the document said nothing. Use it for a shape no level can express — a basin, a ridge, a deliberate outlier. Same units as `x`/`y` |
 | `size` | no | a radius **set by hand**, in pixels, overriding what the node's `weight` would draw. It exists for emphasis the connections do not support — a hub that matters for a reason the map cannot see. Leave it out and the radius comes from `weight`; `weight` is the claim, `size` is the override |
 | `weight` | no | how important the node is **on this map**: the number the drawing is a picture of. Half the summed power of the node's edges times a multiplier for its kind, unless the document states it (see *How a node's size is decided*) |
 | `style` | no | `solid` (settled), `hollow` (proposed), `cloud` / `critter` (threatening or eroding), `skull` (abandoned) |

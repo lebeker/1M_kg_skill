@@ -358,6 +358,10 @@ def seal_batch(path: Path, message: str) -> tuple[bool, str]:
     head = _git(root, "rev-parse", "HEAD").stdout.strip()
     if not head:
         return False, "nothing recorded yet"
+    # Stage the graph's folder first. Amending in place used to seal the *index as it was*
+    # when the batch started, so a document edited after that point was never in HEAD while
+    # `kg history` said it was — the worst kind of history: one that lies.
+    _git(root, "add", "-A", "--", str(rel))
     _git(root, "commit", "-q", "--amend", "-m", message)
     head = _git(root, "rev-parse", "HEAD").stdout.strip()
     state = _read_batch(root)
@@ -1913,9 +1917,9 @@ def main() -> int:
                 print(f"          {facts['purpose']}")
             missing = print_app_guide(facts)
             if missing:
-                print(f"missing   {missing} required piece(s) — tell the user which, what each "
-                      f"is for, and why the graph is built from them. Install nothing "
-                      f"without a yes.")
+                print(f"note      the app lists {missing} piece(s) it can use — say which, what "
+                      f"each is for, and that a graph which does not need one is not missing "
+                      f"anything. Install nothing without a yes.")
         return 0
 
     if a.cmd == "import":
@@ -2476,13 +2480,23 @@ def main() -> int:
         if a.cmd == "stats":
             from collections import Counter
             kinds = Counter(n.get("kind", "?") for n in g["nodes"])
-            styles = Counter(n.get("style", "solid") for n in g["nodes"])
+            # A style belongs to a relation, and the edges are what carry it — or inherit it
+            # from the declaration. Counting nodes here printed the node count as "solid".
+            decl_style = {}
+            for d in g["meta"].get("edges") or []:
+                if isinstance(d, dict) and d.get("name"):
+                    decl_style[str(d["name"])] = d.get("style") or "solid"
+
+            def _edge_style(e):
+                return e.get("style") or decl_style.get(e.get("label") or "", "solid")
+
+            styles = Counter(_edge_style(e) for e in g["edges"])
             lv = sorted({n["level"] for n in g["nodes"] if n.get("level") is not None})
             placed = sum(1 for n in g["nodes"] if n.get("x") is not None)
             print(f"title       : {g['meta'].get('title')}")
             print(f"nodes/edges : {len(g['nodes'])} / {len(g['edges'])}")
             print(f"kinds       : {dict(kinds)}")
-            print(f"styles      : {dict(styles)}")
+            print(f"edge styles : {dict(styles)}")
             if lv:
                 print(f"levels      : {lv}")
             else:
