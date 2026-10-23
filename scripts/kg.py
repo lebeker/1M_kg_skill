@@ -73,6 +73,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib.util
+import difflib
 import json
 import math
 import os
@@ -674,6 +675,389 @@ def inject_docs(html: str, docs: dict) -> str:
         return html
     payload = json.dumps(docs, separators=(",", ":")).replace("</script>", "<\\/script>")
     return html[:m.start(2)] + payload + html[m.end(2):]
+
+
+# What a graph is for, and the documents that finish the job. A map is not the deliverable:
+# the deliverable is what the reader gets — a survey, a brief, a comparison, a timeline — and the
+# graph is how it is checked. The intent picks the doc set; the doc set is what the page lists.
+INTENTS = {
+    "overview":   ("a survey of a field", ("report", "read", "sources", "method")),
+    "profile":    ("where one subject sits", ("report", "read", "sources")),
+    "comparison": ("which alternative is ahead", ("report", "read", "sources")),
+    "timeline":   ("how something got here", ("report", "read", "sources")),
+    "explore":    ("a map to think with", ()),
+}
+DOC_ROLES = ("read", "report", "method", "sources", "rejected", "reference", "coverage", "note")
+DOC_ROLE_HINT = {
+    "read": "how to read this map",
+    "report": "the document this graph was built to produce",
+    "method": "how the corpus was built, what was searched, what was left out",
+    "sources": "every source, query, date and cost",
+    "rejected": "what was considered and rejected, and why",
+    "reference": "an outside taxonomy to measure the shelves against",
+    "coverage": "the shelves against that reference: covered, buried, missing",
+    "note": "anything else",
+}
+MANIFEST_NAME = "index.json"
+
+
+def read_docs_manifest(graph: Path) -> dict:
+    """`docs/index.json`: what the documents are, and what each one is for.
+
+    A folder of markdown is not a set of documents: without a role, a reader cannot tell the
+    report from the method, and the page cannot order them. The manifest is small on purpose —
+    it names the files that exist and says what each is; a file that is not in it is a file the
+    page does not know where to put.
+    """
+    f = docs_dir_for(graph) / MANIFEST_NAME
+    if not f.is_file():
+        return {"docs": []}
+    try:
+        raw = json.loads(f.read_text())
+    except (OSError, ValueError):
+        return {"docs": [], "error": f"{f} is not valid json"}
+    if isinstance(raw, list):
+        raw = {"docs": raw}
+    docs = []
+    for e in raw.get("docs") or []:
+        if isinstance(e, str):
+            e = {"file": e}
+        if isinstance(e, dict) and e.get("file"):
+            docs.append({
+                "file": str(e["file"]),
+                "title": str(e.get("title") or ""),
+                "role": str(e.get("role") or "note"),
+            })
+    out = {"docs": docs}
+    if isinstance(raw, dict) and raw.get("intent"):
+        out["intent"] = str(raw["intent"])
+    return out
+
+
+def write_docs_manifest(graph: Path, docs: list[dict]) -> Path:
+    d = docs_dir_for(graph)
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / MANIFEST_NAME
+    f.write_text(json.dumps({"docs": docs}, indent=1) + "\n")
+    return f
+
+
+def docs_problems(g: dict, graph: Path) -> dict:
+    """What is wrong with the doc set, said in the terms of the intent it was built for."""
+    man = read_docs_manifest(graph)
+    d = docs_dir_for(graph)
+    have = sorted(f.name for f in d.glob("*.md")) if d.is_dir() else []
+    listed = [e["file"] for e in man["docs"]]
+    intent = str((g.get("meta") or {}).get("intent") or man.get("intent") or "")
+    want = INTENTS.get(intent, ("", ()))[1] if intent else ()
+    roles = {e["role"] for e in man["docs"]}
+    return {
+        "manifest": man,
+        "have": have,
+        "listed": listed,
+        "missing": [f for f in listed if f not in have],
+        "unlisted": [f for f in have if f not in listed],
+        "bad_roles": sorted({e["role"] for e in man["docs"] if e["role"] not in DOC_ROLES}),
+        "intent": intent,
+        "roles_wanted": list(want),
+        "roles_absent": [r for r in want if r not in roles],
+    }
+
+
+# --- coverage: the shelves against an outside taxonomy -------------------------------------
+
+_STOP = {"a", "an", "and", "the", "of", "in", "on", "for", "to", "with", "by", "from", "at",
+         "as", "its", "or", "vs", "versus", "into", "over", "under", "between", "after",
+         "before", "during", "is", "are", "be", "other", "new", "how", "what", "who"}
+
+
+def _tokens(text: str) -> list[str]:
+    return [t for t in re.split(r"[^a-z0-9]+", (text or "").lower()) if t and t not in _STOP]
+
+
+def _tok_eq(a: str, b: str) -> bool:
+    """Two words are the same word if one is a plural or an adjective of the other.
+
+    A reference frame is written by someone else, in their words: "telomere attrition" against
+    "telomeres and senescence", "mitochondrial dysfunction" against "mitochondria". Exact
+    equality misses all of those, and a stemmer is a dictionary this file should not carry.
+    """
+    if a == b:
+        return True
+    if len(a) < 4 or len(b) < 4:
+        return False
+    if difflib.SequenceMatcher(None, a, b).ratio() >= 0.85:
+        return True
+    # "macroautophagy" is autophagy with a qualifier in front; "immunosenescence" is not
+    # senescence with one, it is a different thing — so only a short prefix is the same word.
+    shorter, longer = (a, b) if len(a) < len(b) else (b, a)
+    return (len(shorter) >= 6 and (longer.startswith(shorter) or longer.endswith(shorter))
+            and len(longer) - len(shorter) <= 5)
+
+
+def _match_score(section: str, node: dict) -> float:
+    """How much of the section's vocabulary the node's name carries, 0 to 1."""
+    want = _tokens(section)
+    if not want:
+        return 0.0
+    have = _tokens(str(node.get("label") or "")) + _tokens(str(node.get("id") or ""))
+    hit = sum(1 for t in want if any(_tok_eq(t, h) for h in have))
+    return hit / len(want)
+
+
+def _substantial_hit(section: str, node: dict) -> bool:
+    """Does the node name at least one long word of the section?
+
+    Half a section is enough when the half that matched is a term, not a modifier: "telomere"
+    in "telomere attrition" is the thing, "altered" in "altered communication" is not.
+    """
+    want = _tokens(section)
+    have = _tokens(str(node.get("label") or "")) + _tokens(str(node.get("id") or ""))
+    return any(len(t) >= 6 and any(_tok_eq(t, h) for h in have) for t in want)
+
+
+def _reference_sections(path: Path) -> list[str]:
+    """A reference taxonomy as a list of section names: headings, else bullets, else lines."""
+    text = path.read_text()
+    heads = []
+    for line in text.splitlines():
+        m = re.match(r"^(#{1,6})\s+(.*)$", line)
+        if m:
+            heads.append((len(m.group(1)), re.sub(r"^\d+[.)]\s*", "", m.group(2)).strip()))
+    if heads:
+        # The document's own title is not a section: if there is more than one heading level,
+        # keep the most common level, which is how a review is actually structured.
+        levels = {}
+        for lv, name in heads:
+            levels[lv] = levels.get(lv, 0) + 1
+        if len(levels) > 1 and levels.get(1) == 1:
+            keep = min((lv for lv in levels if lv > 1), default=1)
+            heads = [(lv, n) for lv, n in heads if lv == keep]
+        return [n for _lv, n in heads if n]
+    bullets = [re.sub(r"^\s*[-*+]\s+", "", l).strip() for l in text.splitlines()
+               if re.match(r"^\s*[-*+]\s+", l)]
+    if bullets:
+        return bullets
+    return [l.strip() for l in text.splitlines() if l.strip()]
+
+
+def _shelves(g: dict) -> list[dict]:
+    """The top layer of the graph: the nodes that carry the others."""
+    nodes = g.get("nodes") or []
+    levels = [n["level"] for n in nodes if isinstance(n.get("level"), (int, float))]
+    if levels:
+        top = min(levels)
+        return [n for n in nodes if isinstance(n.get("level"), (int, float))
+                and abs(float(n["level"]) - float(top)) < 1e-6]
+    return [n for n in nodes if not n.get("parent")]
+
+
+def _descendants(g: dict, node_id: str) -> list[str]:
+    kids = {}
+    for n in g.get("nodes") or []:
+        if n.get("parent"):
+            kids.setdefault(str(n["parent"]), []).append(str(n["id"]))
+    out, stack = [], [node_id]
+    while stack:
+        cur = stack.pop()
+        for k in kids.get(cur, []):
+            out.append(k)
+            stack.append(k)
+    return out
+
+
+def _shelf_of(g: dict, node_id: str) -> str | None:
+    by_id = {str(n["id"]): n for n in g.get("nodes") or []}
+    seen = set()
+    cur = by_id.get(node_id)
+    while cur is not None and str(cur["id"]) not in seen:
+        seen.add(str(cur["id"]))
+        parent = cur.get("parent")
+        if not parent or str(parent) not in by_id:
+            return str(cur["id"])
+        cur = by_id[str(parent)]
+    return node_id
+
+
+def _has_parents(g: dict) -> bool:
+    return any(n.get("parent") for n in g.get("nodes") or [])
+
+
+def _candidates(g: dict) -> list[dict]:
+    """Which nodes can stand for a reference section.
+
+    The bulk of a graph is evidence: papers, in thousands, against a few dozen shelves. A paper
+    whose title happens to carry a section's words is not the map's answer to that section, so
+    candidates are the levels above the bulk. Graphs without levels, or where that leaves
+    nothing, fall back to everything above the deepest layer, then to everything.
+    """
+    nodes = g.get("nodes") or []
+    levels = [float(n["level"]) for n in nodes if isinstance(n.get("level"), (int, float))]
+    if not levels:
+        return nodes
+    counts = {}
+    for lv in levels:
+        counts[lv] = counts.get(lv, 0) + 1
+    bulk = max(counts, key=lambda lv: counts[lv])
+    above = [n for n in nodes if isinstance(n.get("level"), (int, float)) and float(n["level"]) < bulk]
+    if above:
+        return above
+    shallower = [n for n in nodes
+                 if isinstance(n.get("level"), (int, float)) and float(n["level"]) < max(levels)]
+    return shallower or nodes
+
+
+def coverage_rows(g: dict, sections: list[str]) -> list[dict]:
+    """One row per reference section: what in this graph covers it, and how well."""
+    nodes = _candidates(g)
+    shelves = {str(n["id"]) for n in _shelves(g)}
+    rows = []
+    for sec in sections:
+        scored = sorted(((_match_score(sec, n), n) for n in nodes), key=lambda x: -x[0])
+        # 0.6 covers most of the section; half of it is enough when the half that is there is a
+        # term rather than a modifier ("telomere attrition" -> a node named for telomeres).
+        best = [(sc, n) for sc, n in scored
+                if sc >= 0.6 or (sc >= 0.5 and _substantial_hit(sec, n))][:3]
+        if not best:
+            rows.append({"section": sec, "verdict": "missing", "node": None, "score": 0.0,
+                         "shelf": None, "works": 0, "alts": []})
+            continue
+        sc, node = best[0]
+        shelf = _shelf_of(g, str(node["id"])) if _has_parents(g) else None
+        rows.append({
+            "section": sec,
+            "verdict": "covered" if str(node["id"]) in shelves else "buried",
+            "node": str(node["id"]),
+            "label": str(node.get("label") or node["id"]),
+            "level": node.get("level"),
+            "score": round(sc, 2),
+            "shelf": shelf,
+            "shelf_label": next((str(n.get("label") or n["id"]) for n in g.get("nodes") or []
+                                 if str(n["id"]) == shelf), shelf),
+            "works": len(_descendants(g, str(node["id"]))),
+            "alts": [str(n["id"]) for _sc2, n in best[1:]],
+        })
+    return rows
+
+
+def uncovered_shelves(g: dict, rows: list[dict]) -> list[dict]:
+    """Shelves that no reference section reaches, directly or through a node inside them."""
+    hit = {str(r["shelf"]) for r in rows if r.get("shelf") and r["verdict"] in ("covered", "buried")}
+    return [n for n in _shelves(g) if str(n["id"]) not in hit]
+
+
+def coverage_markdown(g: dict, rows: list[dict], extra: list[dict], against: str) -> str:
+    title = (g.get("meta") or {}).get("title") or "this graph"
+    covered = sum(1 for r in rows if r["verdict"] == "covered")
+    buried = sum(1 for r in rows if r["verdict"] == "buried")
+    missing = sum(1 for r in rows if r["verdict"] == "missing")
+    lines = [
+        f"# Coverage — {title} against an outside frame",
+        "",
+        f"The frame is `{against}`: {len(rows)} sections, written by someone else. This is the",
+        "check that a taxonomy needs and cannot give itself — whether the shelves a reader",
+        "would expect are the shelves this map has.",
+        "",
+        f"**{covered} of {len(rows)} sections have a shelf of their own**, {buried} are reachable",
+        f"only through a node buried inside another shelf, {missing} are not on the map at all.",
+        "",
+        "| section | what covers it | level | verdict |",
+        "|---|---|---|---|",
+    ]
+    for r in rows:
+        what = f"`{r['node']}` {r.get('label')}" if r["node"] else "—"
+        lvl = f"{r.get('level')}" if r.get("level") is not None else "—"
+        verdict = {"covered": "covered", "buried": "buried", "missing": "**missing**"}[r["verdict"]]
+        lines.append(f"| {r['section']} | {what} | {lvl} | {verdict} |")
+    if extra:
+        lines += ["", "## Shelves with no section", "",
+                  "The map carries these at the top layer, and the frame does not name them:",
+                  ""]
+        for n in extra:
+            lines.append(f"- `{n['id']}` {n.get('label')}")
+    lines += ["", "## How this was produced", "",
+              "`kg.py coverage --against " + against + " --write`. Section names are matched on",
+              "vocabulary against node names; a section is `covered` when a top-layer node",
+              "matches, `buried` when only a node inside a shelf does. The judgement a script",
+              "cannot make — whether a buried match is really the same thing — is left visible",
+              "in the table rather than guessed here.", ""]
+    return "\n".join(lines)
+
+
+DOC_SKELETONS = {
+    "read": """# {title}
+
+What this map is, and how to read it. One screen; it makes no claim about the field itself.
+
+## What this is
+
+## How to read it
+
+## What a node carries
+
+## What it does not claim
+""",
+    "report": """# {title}
+
+The document this graph was built to produce. Every paragraph names the nodes it rests on, in
+backticks, so a reader can check the claim against the map and the map against its sources.
+
+## What this is
+
+## The shelves
+
+## Who does it, and who pays
+
+## What is contested
+
+## What this does not claim
+""",
+    "method": """# Method
+
+## How the corpus was built
+
+## What was searched
+
+## What was excluded
+
+## Counts
+""",
+    "sources": """# Sources
+
+Every source, what it gave, when it was asked, and what it cost.
+
+| source | what it gave | when | cost |
+|---|---|---|---|
+""",
+    "rejected": """# Rejected
+
+What was considered and left out, and why. A map that does not say what it rejected cannot be
+told apart from one that never looked.
+
+## Candidates
+""",
+    "reference": """# Reference frame
+
+An outside taxonomy, verbatim, one heading per section, in the words its author used. This is
+the one document the graph did not write about itself, and `coverage` measures the shelves
+against it.
+
+## Section one
+
+## Section two
+""",
+    "coverage": """# Coverage
+
+Generated by `kg.py coverage --against docs/reference.md --write`. Do not write it by hand.
+""",
+    "note": """# {title}
+""",
+}
+
+
+def doc_skeleton(role: str, title: str) -> str:
+    """The shape of a document of this role, with the graph's own title in place."""
+    return (DOC_SKELETONS.get(role) or DOC_SKELETONS["note"]).format(title=title)
 
 
 def slug(text: str) -> str:
@@ -1464,6 +1848,13 @@ def render(g: dict, out: Path, app: str | None = None, source: Path | None = Non
             print(f"  this graph says its app can be fetched from:\n    {url}\n"
                   f"    python3 scripts/kg.py check --install", file=sys.stderr)
         raise
+    # The page lists the documents by role, so the manifest travels with the graph. It is added
+    # here rather than saved into the document: `docs/index.json` is the source of truth, and a
+    # render must not rewrite the graph it was asked to draw.
+    if source:
+        man = read_docs_manifest(source)
+        if man["docs"]:
+            g = {**g, "meta": {**(g.get("meta") or {}), "docs": man["docs"]}}
     html = inject(tmpl.read_text(), g)
     docs = collect_docs(source) if source else {}
     html = inject_docs(html, docs)
@@ -1525,6 +1916,10 @@ def main() -> int:
     p.add_argument("--app", help="seed the graph from this app: its requirements, kinds, "
                                  "colours and the shape of its edges")
     p.add_argument("--ask", help="a user's words — pick the app that fits, then seed from it")
+    p.add_argument("--intent", choices=sorted(INTENTS),
+                   help="what the graph is for: " + ", ".join(
+                       f"{k} ({v[0]})" for k, v in INTENTS.items()) +
+                        " — the intent decides the documents it must produce")
 
     p = sub.add_parser("import", help="convert another tool's export into kg format")
     p.add_argument("--format", dest="fmt", required=True,
@@ -1630,6 +2025,24 @@ def main() -> int:
                    help="also write the result into each node's `size`, so the graph looks the "
                         "same anywhere without recomputing")
     p.add_argument("--top", type=int, default=10, help="how many nodes to list")
+
+    p = with_graph(sub.add_parser("coverage", help="measure the shelves against an outside "
+                                                   "taxonomy: what it covers, what is buried, "
+                                                   "what is missing"))
+    p.add_argument("--against", help="the reference — markdown headings, one per section "
+                                     "(default: docs/reference.md)")
+    p.add_argument("--write", action="store_true",
+                   help="write the result to docs/coverage.md and list it in docs/index.json")
+    p.add_argument("--top", type=int, default=40, help="how many rows to print")
+
+    p = with_graph(sub.add_parser("doc", help="start a document of a known role, and list it "
+                                               "in docs/index.json"))
+    p.add_argument("--role", choices=list(DOC_ROLES),
+                   help="what the document is for: " + ", ".join(
+                       f"{r} ({DOC_ROLE_HINT[r]})" for r in DOC_ROLES))
+    p.add_argument("--file", help="file name inside docs/ (default: <role>.md)")
+    p.add_argument("--title", help="the document's heading")
+    p.add_argument("--list", action="store_true", help="print the doc set as it stands")
 
     p = with_graph(sub.add_parser("note", help="write the long form of a description, as a "
                                                  "markdown file in the graph's docs/"))
@@ -1882,6 +2295,8 @@ def main() -> int:
             facts = app_facts(app)
 
         meta = {"title": a.title, "schema": SCHEMA, "limits": dict(DEFAULT_LIMITS)}
+        if a.intent:
+            meta["intent"] = a.intent
         if app:
             meta["app"] = app
             url = facts.get("url") or default_app_url()
@@ -1915,6 +2330,10 @@ def main() -> int:
             print(f"app       {app} — {facts.get('title', '')}")
             if facts.get("purpose"):
                 print(f"          {facts['purpose']}")
+            if a.intent and INTENTS[a.intent][1]:
+                print(f"intent    {a.intent} — {INTENTS[a.intent][0]}; it expects these "
+                      f"documents in docs/: {', '.join(INTENTS[a.intent][1])}")
+                print("          start each one with: kg.py doc --graph <id> --role <role>")
             missing = print_app_guide(facts)
             if missing:
                 print(f"note      the app lists {missing} piece(s) it can use — say which, what "
@@ -2281,6 +2700,27 @@ def main() -> int:
                        if url else "see assets/README.md")
                 r["warnings"].append(f"meta.app names '{app}' but assets/{app}.html is not "
                                      f"here — render will fail; {how}")
+            # A folder of markdown is not a doc set: say what the intent expects, what is
+            # declared, and what is sitting there unnamed.
+            probs = docs_problems(g, path)
+            if probs["missing"]:
+                r["warnings"].append(
+                    f"{MANIFEST_NAME} lists {', '.join(probs['missing'])} but "
+                    f"{DOCS_DIRNAME}/ does not have it")
+            if probs["unlisted"]:
+                r["warnings"].append(
+                    f"{DOCS_DIRNAME}/ holds {', '.join(probs['unlisted'])} which "
+                    f"{MANIFEST_NAME} does not name — the page cannot place it")
+            if probs["bad_roles"]:
+                r["warnings"].append(
+                    f"unknown doc role(s) {', '.join(probs['bad_roles'])}; known: "
+                    f"{', '.join(DOC_ROLES)}")
+            if probs["roles_absent"]:
+                r["info"].append(
+                    f"intent '{probs['intent']}' expects these documents and has no such "
+                    f"role yet: {', '.join(probs['roles_absent'])} — `doc --role <role>` "
+                    f"starts each one")
+
             lim = (g.get("meta") or {}).get("limits") or {}
             if lim.get("nodes") or lim.get("edges"):
                 over = []
@@ -2507,12 +2947,135 @@ def main() -> int:
                       if not any(e["from"] == n["id"] or e["to"] == n["id"] for e in g["edges"])]
             print(f"isolated    : {len(orphan)} nodes have no edges" +
                   (f" ({', '.join(orphan[:6])}{'…' if len(orphan) > 6 else ''})" if orphan else ""))
+            intent = g["meta"].get("intent")
+            probs = docs_problems(g, path)
+            if intent or probs["manifest"]["docs"]:
+                if intent:
+                    label = INTENTS.get(intent, ("", ()))[0]
+                    print(f"intent      : {intent}" + (f" — {label}" if label else
+                          "   (unknown: " + ", ".join(INTENTS) + ")"))
+                if probs["manifest"]["docs"] or probs["have"]:
+                    roles = {e["role"]: e["file"] for e in probs["manifest"]["docs"]}
+                    bits = [f"{r} {'✓' if r in roles else '—'}"
+                            for r in (probs["roles_wanted"] or ())]
+                    print(f"docs        : {len(probs['have'])} in {DOCS_DIRNAME}/ · "
+                          + (f"declared {len(probs['manifest']['docs'])}"
+                             + (f" · {' '.join(bits)}" if bits else "")
+                             if probs["manifest"]["docs"] else "no " + MANIFEST_NAME))
+                    if probs["unlisted"]:
+                        print(f"              not listed: {', '.join(probs['unlisted'])}")
             known = set(g["meta"].get("colors") or {})
             custom = sorted({str(n.get("kind", "")) for n in g["nodes"]} - known) if known else []
             if custom:
                 print(f"no palette  : {custom} — these get a hashed colour; add them to "
                       f"meta.colors for control")
             return 0
+
+    if a.cmd == "coverage":
+        path = resolve_graph(a.graph)
+        g = load(path)
+        d = docs_dir_for(path)
+        ref = Path(a.against).expanduser() if a.against else (d / "reference.md")
+        if not ref.is_file() and not ref.is_absolute():
+            ref = d / ref.name
+        if not ref.is_file():
+            print(f"error: no reference at {ref}", file=sys.stderr)
+            print("       write the outside taxonomy there — one heading per section, in the "
+                  "words its author used — or pass --against", file=sys.stderr)
+            return 2
+        sections = _reference_sections(ref)
+        if not sections:
+            print(f"error: {ref} has no headings, bullets or lines to use as sections",
+                  file=sys.stderr)
+            return 2
+        rows = coverage_rows(g, sections)
+        extra = uncovered_shelves(g, rows)
+        shelves = _shelves(g)
+        covered = sum(1 for r in rows if r["verdict"] == "covered")
+        buried = sum(1 for r in rows if r["verdict"] == "buried")
+        missing = sum(1 for r in rows if r["verdict"] == "missing")
+        rel = ref.relative_to(d) if d in ref.parents else ref
+        print(f"reference   : {rel} — {len(rows)} sections")
+        print(f"shelves     : {len(shelves)} at the top layer")
+        print(f"covered     : {covered} — a top-layer node carries the section's vocabulary")
+        print(f"buried      : {buried} — only a node inside a shelf matches")
+        print(f"missing     : {missing} — nothing at all")
+        print(f"unclaimed   : {len(extra)} shelves carry no section"
+              + (f" ({', '.join(str(n.get('label') or n['id']) for n in extra[:4])}"
+                 + ("…" if len(extra) > 4 else "") + ")" if extra else ""))
+        print()
+        kids = _has_parents(g)
+        head = (f"{'section':<32} {'covers':<44} {'level':>5}" +
+                (f" {'works':>6}" if kids else "") + "  verdict")
+        print(head)
+        print("-" * len(head))
+        for r in rows[: a.top]:
+            what = (f"{r['label']} ({r['node']})" if r["node"] else "—")
+            if len(what) > 43:
+                what = what[:40] + "…"
+            lvl = "—" if r.get("level") is None else f"{r['level']}"
+            extra = f" {r['works']:>6}" if kids else ""
+            print(f"{r['section'][:31]:<32} {what:<44} {lvl:>5}{extra}  {r['verdict']}")
+        if len(rows) > a.top:
+            print(f"… {len(rows) - a.top} more")
+        if a.write:
+            d.mkdir(parents=True, exist_ok=True)
+            out = d / "coverage.md"
+            out.write_text(coverage_markdown(g, rows, extra, str(rel)))
+            man = read_docs_manifest(path)
+            docs = [e for e in man["docs"] if e["file"] != "coverage.md"]
+            if ref.name not in [e["file"] for e in docs]:
+                docs.append({"file": ref.name,
+                             "title": "The reference frame this map is measured against",
+                             "role": "reference"})
+            docs.append({"file": "coverage.md",
+                         "title": f"Coverage against {rel}",
+                         "role": "coverage"})
+            write_docs_manifest(path, docs)
+            print()
+            print(f"wrote       {out}")
+            print(f"listed      in {d / MANIFEST_NAME} as role coverage")
+        return 0
+
+    if a.cmd == "doc":
+        path = resolve_graph(a.graph)
+        g = load(path)
+        d = docs_dir_for(path)
+        man = read_docs_manifest(path)
+        if a.list:
+            if not man["docs"]:
+                print(f"no manifest in {d} — `doc --role <role>` starts one")
+                return 0
+            have = {f.name for f in d.glob("*.md")} if d.is_dir() else set()
+            print(f"{len(man['docs'])} document(s) declared in {d / MANIFEST_NAME}:")
+            for e in man["docs"]:
+                mark = "" if e["file"] in have else "   MISSING"
+                print(f"  {e['role']:<10} {e['file']:<24} {e['title']}{mark}")
+            loose = sorted(have - {e['file'] for e in man['docs']})
+            if loose:
+                print(f"not listed  : {', '.join(loose)}")
+            return 0
+        if not a.role:
+            print("error: which role? --role " + ", ".join(DOC_ROLES), file=sys.stderr)
+            return 2
+        name = (a.file or f"{a.role}.md").strip()
+        if not name.endswith(".md"):
+            name += ".md"
+        f = d / name
+        d.mkdir(parents=True, exist_ok=True)
+        existed = f.is_file()
+        if not existed:
+            title = (a.title or (g.get("meta") or {}).get("title") or name[:-3])
+            f.write_text(doc_skeleton(a.role, title))
+        docs = [e for e in man["docs"] if e["file"] != name]
+        docs.append({"file": name, "title": a.title or "", "role": a.role})
+        write_docs_manifest(path, docs)
+        print(f"{'kept' if existed else 'wrote'}       {f}")
+        print(f"role        {a.role} — {DOC_ROLE_HINT[a.role]}")
+        if a.role == "coverage":
+            print("note        coverage.md is generated: kg.py coverage --against docs/reference.md "
+                  "--write")
+        return 0
 
     if a.cmd == "note":
         path = resolve_graph(a.graph)
@@ -2525,9 +3088,12 @@ def main() -> int:
             else:
                 print(f"{len(docs)} note(s) in {d}:")
                 pointed = {str(n.get("doc") or n.get("md") or "") for n in g["nodes"]}
+                roles = {f"{DOCS_DIRNAME}/{e['file']}": e["role"]
+                         for e in read_docs_manifest(path)["docs"]}
                 for k in docs:
                     mark = "-> a node" if k in pointed else "  (unlinked)"
-                    print(f"  {k:<34} {len(docs[k]):>6} chars  {mark}")
+                    role = roles.get(k, "  —")
+                    print(f"  {k:<34} {len(docs[k]):>6} chars  {role:<10} {mark}")
             return 0
         name = (a.file or "").strip()
         title = (a.title or "").strip()

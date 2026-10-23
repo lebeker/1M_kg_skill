@@ -185,8 +185,21 @@ installed, every skill/plugin/tool it **requires** — each with what it is for 
    seeds the palette with the app's kinds so `stats` never warns, and prints the kinds and
    edge patterns to build with. `new --ask "…"` does the same, picking the app from the
    user's own words.
-5. **Then build it and show it** — the procedure below. The graph is the deliverable; the
-   app only decides its shape.
+5. **Ask what the graph is for, and record it** — `--intent` on `new`:
+   `overview` (a survey of a field), `profile` (where one subject sits), `comparison` (which
+   alternative is ahead), `timeline` (how something got here), `explore` (a map to think with).
+   The intent is not a label: it says which documents the graph must produce, and therefore
+   when the work is done.
+6. **Then build it and show it** — the procedure below. The document is the deliverable, the
+   graph is how its claims are checked, and the app only decides its shape.
+
+**The document is the deliverable.** A graph that renders is not a finished job. `docs/` holds
+a set of documents, each with a role — the report, how to read the map, the method, the
+sources, what was rejected — declared in `docs/index.json` and listed by the page. Start each
+one with `kg.py doc --role <role>`; `stats` says which roles the intent still expects. A survey
+also measures its own shelves against an outside taxonomy (`coverage --against
+docs/reference.md`): `covered`, `buried`, `missing`, and the shelves no section names. Full
+procedure and the acceptance line: `references/docs.md`.
 
 **Where this knowledge lives.** `scripts/apps.json` is this skill's own short list of known
 apps, so the first question can be answered before anything is installed. Once an app is
@@ -524,8 +537,9 @@ line behind. It refuses ids that do not exist rather than reporting a cheerful `
 **A filename is not a link**, and neither is a path the human has to assemble. This is the
 most common way this skill fails its user.
 
-**The page is the deliverable, and it is self-contained** — the whole graph is inlined into
-the HTML — so it needs no server, no network and nothing left running:
+**The page is how the work is read, and it is self-contained** — the whole graph and every
+document in `docs/` are inlined into the HTML — so it needs no server, no network and nothing
+left running:
 
 ```bash
 python3 "$ENGINE" render --graph field                        # → storage/field/index.html
