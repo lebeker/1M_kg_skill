@@ -2954,6 +2954,9 @@ def main() -> int:
                     label = INTENTS.get(intent, ("", ()))[0]
                     print(f"intent      : {intent}" + (f" — {label}" if label else
                           "   (unknown: " + ", ".join(INTENTS) + ")"))
+                brief = (g.get("meta") or {}).get("brief")
+                if brief:
+                    print("brief       : " + (brief if len(brief) <= 96 else brief[:93] + "…"))
                 if probs["manifest"]["docs"] or probs["have"]:
                     roles = {e["role"]: e["file"] for e in probs["manifest"]["docs"]}
                     bits = [f"{r} {'✓' if r in roles else '—'}"

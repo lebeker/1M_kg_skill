@@ -185,21 +185,23 @@ installed, every skill/plugin/tool it **requires** — each with what it is for 
    seeds the palette with the app's kinds so `stats` never warns, and prints the kinds and
    edge patterns to build with. `new --ask "…"` does the same, picking the app from the
    user's own words.
-5. **Ask what the graph is for, and record it** — `--intent` on `new`:
-   `overview` (a survey of a field), `profile` (where one subject sits), `comparison` (which
-   alternative is ahead), `timeline` (how something got here), `explore` (a map to think with).
-   The intent is not a label: it says which documents the graph must produce, and therefore
-   when the work is done.
+5. **Work out what report the graph has to produce — and record it.** The user's goal is a
+   report, and its contents are yours to establish, not theirs to choose from a menu: read the
+   ask, the decision it feeds and who will read it, write the question in one sentence, and put
+   it in the document — `set-meta --key brief --value "…"`. Then build the graph that can answer
+   it. `--intent` records the *shape* (`overview`, `profile`, `comparison`, `timeline`,
+   `explore`) when it is clear; it is a note to the next agent, never a question to the user.
 6. **Then build it and show it** — the procedure below. The document is the deliverable, the
    graph is how its claims are checked, and the app only decides its shape.
 
-**The document is the deliverable.** A graph that renders is not a finished job. `docs/` holds
-a set of documents, each with a role — the report, how to read the map, the method, the
-sources, what was rejected — declared in `docs/index.json` and listed by the page. Start each
-one with `kg.py doc --role <role>`; `stats` says which roles the intent still expects. A survey
-also measures its own shelves against an outside taxonomy (`coverage --against
-docs/reference.md`): `covered`, `buried`, `missing`, and the shelves no section names. Full
-procedure and the acceptance line: `references/docs.md`.
+**The document is the deliverable — and it is about the field, not about the map.** A graph
+that renders is not a finished job; a report that explains the graph is not one either. The
+report carries findings a reader can use and cites the nodes they rest on; what a weight means,
+how the fold works, what the coverage script does — that is `method.md`, for whoever checks the
+work. `docs/` holds the set, each document with a role, declared in `docs/index.json` and listed
+by the page; `kg.py doc --role <role>` starts each one and `stats` says which the intent still
+expects. A survey also measures its shelves against an outside taxonomy (`coverage --against
+docs/reference.md`). Full procedure and the acceptance line: `references/docs.md`.
 
 **Where this knowledge lives.** `scripts/apps.json` is this skill's own short list of known
 apps, so the first question can be answered before anything is installed. Once an app is

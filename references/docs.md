@@ -4,21 +4,30 @@ A graph that renders is not a finished job. The question that decides whether th
 is the reader's: *what do I get?* — a survey, a brief, a comparison, a timeline. The graph is
 how that document's claims are checked; the page is how it is read.
 
-## Ask what the graph is for
+## The report comes first, and the intention is yours to establish
 
-`new --intent` records it in `meta.intent`. Five answers, and each one changes the shape of the
-work, not just the wording:
+The user's goal is always a report. What goes in it is **not** something to ask them as a menu of
+shapes — it is the agent's job to work out from three things: what they said, what decision the
+report feeds, and who reads it. Write the answer down in one sentence and put it in the document:
 
-| intent | the document | the graph must carry | done when |
-|---|---|---|---|
-| `overview` | a survey of a field, 1,500+ words, publishable | authored shelves, evidence under them, the periphery (people, money, companies) | every section has a node, every paragraph cites one, the shelves are measured against an outside frame |
-| `profile` | one page answering five written questions about one subject | the subject, their works, their orbit | each question is answered with node ids |
-| `comparison` | a table: one row per alternative, one column per axis | the alternatives, what they share, the money, the competition | no empty cell that does not say "no evidence" |
-| `timeline` | a dated narrative | stages as levels, progression as edges | every claim is dated and sourced |
-| `explore` | nothing yet — the map is the answer | whatever the question needs | the user can see the shape and say what to ask next |
+```bash
+python3 "$ENGINE" set-meta --graph field --key brief --value "Which parts of longevity research
+are structurally thin, and where does the money sit against the literature?"
+```
 
-If the user has no firm intention, that is `explore`, and it is honest to say so. Do not write a
-report nobody asked for; do not skip the report when that is the job.
+`meta.brief` is the report's question. If the answer would not change anything for the reader,
+it is the wrong question — pick another before building, not after. `meta.intent` (`overview`,
+`profile`, `comparison`, `timeline`, `explore`) is a note about the *shape* of the work, for the
+next agent; it is never a question to put to the user.
+
+If their words are genuinely empty, build the map that lets them ask a better question
+(`explore`) and say plainly that no report was written. Do not invent a report nobody wanted;
+do not skip the report when that is the job.
+
+**The report is about the field; the map is the evidence.** A reader who is told what a weight
+means, how folding works, or what the coverage script does has been handed the instrument
+instead of the finding. Those belong in `method.md`, for whoever checks the work. The report
+carries findings and cites the nodes they rest on.
 
 ## The doc set: a folder with roles
 
@@ -96,8 +105,9 @@ For `overview`, "done" means all of these, and they are checkable:
   claim"), every paragraph carrying at least one node id;
 - **the shelves are measured** — `coverage` run against a reference, the four numbers in the
   report, every miss explained;
-- **the weights are defined** — `meta.weight.metric` says what the number on a node means,
-  and the panel shows it;
+- **the apparatus exists and stays out of the report** — `meta.weight.metric` says what the
+  number on a node means, the method says how the corpus was built, the sources say what was
+  asked and paid, and none of that machinery is explained to the reader of the report;
 - **the map is readable** — `render`, then look at it: the categories at the top layer, a
   branch opens, 3D has depth, the docs button lists the set;
 - **the cost is recorded** — wall clock, source calls, and what was paid, if anything.
