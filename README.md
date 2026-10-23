@@ -10,11 +10,19 @@ The picture is the point. A JSON dump of the same facts tells you far less.
 
 ## Showcase
 
-A worked case, end to end: **<https://lebeker.github.io/1M_kg_sciense-kg_webapp/>**
+Two worked cases, end to end, at **<https://lebeker.github.io/1M_kg_sciense-kg_webapp/>**
 
-One article on the neurokinin antagonist class — the prompt that started it, the method note that
-came with it, the article, the `kg/1` document, and the page it renders into. Plus
-[what every button does](https://lebeker.github.io/1M_kg_sciense-kg_webapp/how-to/): folding,
+1. **A drug overview** — [Lynkuet and the neurokinin antagonist
+   class](https://lebeker.github.io/1M_kg_sciense-kg_webapp/lynkuet/): one article, 35 nodes, 24
+   OpenAlex calls, about $0.012. The prompt that started it, the method note that came with it,
+   the article, the `kg/1` document, and the page it renders into.
+2. **A field survey** — [Longevity research: where the work sits, and where the money
+   doesn't](https://lebeker.github.io/1M_kg_sciense-kg_webapp/catmap/): 1,817 nodes, 110
+   categories, 1,563 works, and a report whose every claim links to a node. The [brief and its
+   queries](https://lebeker.github.io/1M_kg_sciense-kg_webapp/catmap/prompt.md) are published with
+   it, and the report ends by pricing its own four gaps instead of hedging.
+
+Plus [what every button does](https://lebeker.github.io/1M_kg_sciense-kg_webapp/how-to/): folding,
 the legend, the node panel, limits — with a live map to try it on.
 
 Nothing here is specific to any one project. Import your own data, name your own node
