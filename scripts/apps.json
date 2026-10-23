@@ -44,7 +44,7 @@
         "trial"
       ],
       "repo": "https://github.com/lebeker/1M_kg_sciense-kg_webapp",
-      "url": "https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/viewer-v0.0.52/viewer.html",
+      "url": "https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/viewer-v0.0.53/viewer.html",
       "manifest_url": "https://raw.githubusercontent.com/lebeker/1M_kg_sciense-kg_webapp/main/app.json",
       "requires": {
         "skills": [
