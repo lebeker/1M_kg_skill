@@ -109,8 +109,9 @@ script cannot make, and the table is where it is made visible.
 
 For `overview`, "done" means all of these, and they are checkable:
 
-- **the report exists** — 1,500+ words, 15+ sources, a written scope line ("what this does not
-  claim"), every paragraph carrying at least one node id;
+- **the report answers its brief** — every section is one of the questions `meta.brief` asks, every
+  paragraph carries at least one node id, and every finding says what it would take to overturn
+  it. Length is whatever those three rules produce; a word count is not a definition of done;
 - **the shelves are measured** — `coverage` run against a reference, the four numbers in the
   report, every miss explained;
 - **the gaps are paths** — every thin place names its fix, its cost and what the finding does
