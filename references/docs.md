@@ -24,6 +24,14 @@ If their words are genuinely empty, build the map that lets them ask a better qu
 (`explore`) and say plainly that no report was written. Do not invent a report nobody wanted;
 do not skip the report when that is the job.
 
+**A gap in the data is a price, not a disclaimer.** Never close a report with "this could be
+wrong because…". Name the four or five places the evidence is thinner than the claims, and for
+each one write: what is missing, **how to get it**, what it costs (money, queries, hours), and
+what the number would do if it came back the other way. "The money is apportioned rather than read
+from awards" is half a sentence; "apportioned; fix with NIH RePORTER, free, one query per funder,
+about a day" is the whole one. If a finding cannot survive any of the four fixes, cut it. If it
+survives all four, say so — that sentence is the report's spine.
+
 **The report is about the field; the map is the evidence.** A reader who is told what a weight
 means, how folding works, or what the coverage script does has been handed the instrument
 instead of the finding. Those belong in `method.md`, for whoever checks the work. The report
@@ -105,6 +113,8 @@ For `overview`, "done" means all of these, and they are checkable:
   claim"), every paragraph carrying at least one node id;
 - **the shelves are measured** — `coverage` run against a reference, the four numbers in the
   report, every miss explained;
+- **the gaps are paths** — every thin place names its fix, its cost and what the finding does
+  without it, and no sentence in the report ends in "but this could be wrong";
 - **the apparatus exists and stays out of the report** — `meta.weight.metric` says what the
   number on a node means, the method says how the corpus was built, the sources say what was
   asked and paid, and none of that machinery is explained to the reader of the report;

@@ -690,7 +690,7 @@ INTENTS = {
 DOC_ROLES = ("read", "report", "method", "sources", "rejected", "reference", "coverage", "note")
 DOC_ROLE_HINT = {
     "read": "how to read this map",
-    "report": "the document this graph was built to produce",
+    "report": "the document this graph was built to produce: findings about the field, citing nodes",
     "method": "how the corpus was built, what was searched, what was left out",
     "sources": "every source, query, date and cost",
     "rejected": "what was considered and rejected, and why",
@@ -1010,7 +1010,7 @@ backticks, so a reader can check the claim against the map and the map against i
 
 ## What is contested
 
-## What this does not claim
+## What would change these findings, and what it costs
 """,
     "method": """# Method
 
