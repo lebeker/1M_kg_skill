@@ -1100,6 +1100,56 @@ def graph_dir(gid: str) -> Path:
     return storage_dir() / gid
 
 
+def originals_dir(path: Path) -> Path:
+    """The files behind a node: scans, lab reports, PDFs — kept beside the graph,
+    never inside it. A node refers to them by relative path."""
+    return path.parent / "originals"
+
+
+def cmd_attach(a) -> int:
+    """Copy the source file(s) into the graph's originals/ and point the node at them.
+
+    An analysis is a claim about a document. The document stays a file; the node
+    carries the path, the hash and the size, so the claim can be checked later.
+    """
+    path = resolve_graph(a.graph)
+    g = load(path)
+    node = next((n for n in g.get("nodes") or [] if n.get("id") == a.node), None)
+    if node is None:
+        raise SystemExit(f"error: no node '{a.node}' in {path}")
+    d = originals_dir(path)
+    d.mkdir(parents=True, exist_ok=True)
+    kept = node.setdefault("originals", [])
+    added = []
+    for f in a.file:
+        src = Path(f).expanduser()
+        if not src.is_file():
+            raise SystemExit(f"error: no file '{f}'")
+        data = src.read_bytes()
+        digest = hashlib.sha256(data).hexdigest()
+        if any(isinstance(k, dict) and k.get("sha256") == digest for k in kept):
+            continue                                    # the same document twice is one document
+        name = src.name
+        dest = d / name
+        n = 2
+        while dest.exists() and hashlib.sha256(dest.read_bytes()).hexdigest() != digest:
+            dest = d / f"{src.stem}-{n}{src.suffix}"
+            n += 1
+        if not dest.exists():
+            if a.move:
+                shutil.move(str(src), str(dest))
+            else:
+                shutil.copy2(src, dest)
+        kept.append({"path": f"originals/{dest.name}", "bytes": len(data),
+                     "sha256": digest, "added": datetime.now(timezone.utc).date().isoformat()})
+        added.append(f"originals/{dest.name}")
+    save(g, path)
+    for x in added:
+        print(f"attached {x}  ->  {a.node}")
+    if not added:
+        print("already attached: nothing to do")
+    return 0
+
 def current_marker() -> Path:
     return storage_dir() / ".current"
 
@@ -1909,6 +1959,13 @@ def main() -> int:
                    help="where the app's declaration lives")
     p.add_argument("--force", action="store_true", help="replace an existing copy")
 
+    p = with_graph(sub.add_parser("attach", help="keep the file behind a node: a lab report, "
+                                                "a scan, a measurement — copied into the graph's "
+                                                "own originals/ folder"))
+    p.add_argument("--node", required=True, help="the node the document belongs to")
+    p.add_argument("--file", action="append", required=True, help="the document (repeatable)")
+    p.add_argument("--move", action="store_true", help="move instead of copy")
+
     p = sub.add_parser("new", help="start an empty graph")
     p.add_argument("--out", help="explicit path (default: storage/<id>/graph.json)")
     p.add_argument("--id", help="workspace id for the graph")
@@ -2235,6 +2292,9 @@ def main() -> int:
     if a.cmd == "fetch-app":
         return fetch_app(a.id, a.url, a.manifest_url, a.force)
 
+    if a.cmd == "attach":
+        return cmd_attach(a)
+
     if a.cmd == "require":
         path = resolve_graph(a.graph)
         g = load(path)
@@ -2470,9 +2530,16 @@ def main() -> int:
                 print(f"  {score:9.3f}  {n.get('kind', '?'):<12} {n.get('label', n['id'])[:44]}")
             return 0
         if a.cmd == "set-meta":
-            g["meta"][a.key] = a.value
+            val = a.value
+            # a value that is JSON is stored as JSON, so props, limits and palettes stay objects
+            if val[:1] in "{[":
+                try:
+                    val = json.loads(val)
+                except Exception:
+                    pass
+            g["meta"][a.key] = val
             save(g, path)
-            print(f"meta[{a.key}] = {a.value}")
+            print(f"meta[{a.key}] = {json.dumps(val) if isinstance(val, (dict, list)) else val}")
             return 0
         if a.cmd == "add-node":
             if any(n["id"] == a.id for n in g["nodes"]):
@@ -2691,6 +2758,13 @@ def main() -> int:
 
         if a.cmd == "validate":
             r = conform(g)
+            for n in (g.get("nodes") or []):
+                for o in (n.get("originals") or []):
+                    rel = o.get("path") if isinstance(o, dict) else o
+                    if rel and not (path.parent / rel).is_file():
+                        r["errors"].append(f"node {n.get('id')!r}: original {rel!r} is "
+                                           "missing — the document behind the claim is not "
+                                           "in the graph folder")
             # The graph names the app that draws it; if that app is not here, `render`
             # will fail later and the reader deserves to hear it from `validate` now.
             app = (g.get("meta") or {}).get("app")

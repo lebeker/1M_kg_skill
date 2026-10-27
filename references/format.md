@@ -394,3 +394,62 @@ grown past, which is the work of keeping a survey honest rather than a formality
 
 The format has no notion of a host, a user, or a project. A graph file can be moved,
 committed, emailed or published as-is, and the same file renders identically elsewhere.
+
+## Originals: the document behind a node
+
+A supplied measurement, analysis or scan is **a file first**. It is kept beside the graph, never
+inside it:
+
+```
+storage/<graph>/
+  graph.json
+  originals/
+    2024-11-07-dobrobut-805248681.pdf
+    2024-11-07-dobrobut-805248681.png
+```
+
+`attach --node <id> --file <path>` copies (or `--move`) the document in, hashes it, and writes the
+reference onto the node. The same document attached twice is one entry — the hash is the identity.
+
+```json
+{
+  "id": "lab-2024-11-07",
+  "label": "Лабораторні дослідження № 805248681",
+  "kind": "analysis",
+  "date": "2024-11-07",
+  "panel": "Вуглеводний обмін",
+  "originals": [
+    { "path": "originals/2024-11-07-dobrobut-805248681.pdf", "bytes": 51234,
+      "sha256": "…", "added": "2026-10-27" }
+  ],
+  "values": [
+    { "name": "Глюкоза", "value": 4.94, "unit": "ммоль/л", "ref": [4.11, 5.89] }
+  ]
+}
+```
+
+`validate` fails when an `originals` path does not exist: a node that says it has the document must
+have the document.
+
+### What an analysis says about an organ
+
+An analysis does not "belong" to a body part by convention; it **points at it with an edge**, and
+the edge carries the two numbers the picture is made of:
+
+```json
+{ "from": "lab-2024-11-07", "to": "pancreas", "label": "assesses",
+  "evidence": 82, "confidence": 70 }
+```
+
+| field | range | meaning | drawn as |
+|---|---|---|---|
+| `evidence` | 0–100 | how strongly the result argues that the organ is **functioning normally** — 100 is a clean result, 0 is clearly wrong | the colour: **green → yellow → red** |
+| `confidence` | 0–100 | how much the result can be trusted for that organ — a single fasting glucose is weaker than an HbA1c plus a repeat | the opacity of the edge (and of the analysis node) |
+
+Both are **the document's own numbers** — a lab report with one raised marker out of twelve is not
+`evidence: 0`. The skill writes them; the app only paints them. A renderer that hard-codes a
+different rule is disagreeing with the data in public.
+
+The same two numbers govern how an analysis fades as the user walks the timeline away from its
+date: the further the chosen date from the analysis's `date`, the weaker its claim, and the app
+draws it accordingly. The `date` is the anchor; nothing else in the document moves in time.
